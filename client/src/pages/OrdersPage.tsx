@@ -53,7 +53,6 @@ const SERVICE_TYPES = [
   "Professional CV", 
   "Europass CV",
   "LinkedIn Profile",
-  "Cover Letter (ATS)",
   "Cover Letter (Professional)",
   "Cover Letter (Europass)",
 ];
@@ -209,12 +208,14 @@ export default function OrdersPage() {
               <TableHeader className="bg-slate-900/50">
                 <TableRow className="border-slate-800 hover:bg-transparent">
                   <TableHead className="text-slate-400">Order ID</TableHead>
+                  <TableHead className="text-slate-400">Date Placed</TableHead>
                   <TableHead className="text-slate-400">Client</TableHead>
                   <TableHead className="text-slate-400">Services</TableHead>
                   <TableHead className="text-slate-400">Designer</TableHead>
                   <TableHead className="text-slate-400">Deadline</TableHead>
                   <TableHead className="text-slate-400">Status</TableHead>
                   {canSeePaymentStatus && <TableHead className="text-slate-400">Payment</TableHead>}
+                  {canSeeFinance && <TableHead className="text-slate-400">Remaining</TableHead>}
                   <TableHead className="text-right text-slate-400">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -224,6 +225,7 @@ export default function OrdersPage() {
                   return (
                     <TableRow key={order.id} className={cn("border-slate-800 hover:bg-slate-900/50", isOverdue && "bg-red-500/5")} data-testid={`row-order-${order.id}`}>
                       <TableCell className="font-mono text-xs text-blue-400">{order.orderNumber}</TableCell>
+                      <TableCell className="text-slate-400 text-xs">{format(new Date(order.createdAt!), "MMM dd, yyyy")}</TableCell>
                       <TableCell className="text-white font-medium">{order.clientName}</TableCell>
                       <TableCell className="text-slate-300 text-sm max-w-[200px] truncate">{getServicesDisplay(order.services)}</TableCell>
                       <TableCell>
@@ -263,6 +265,11 @@ export default function OrdersPage() {
                           </Badge>
                         </TableCell>
                       )}
+                      {canSeeFinance && (
+                        <TableCell className="text-red-400 font-medium">
+                          ₨{(((order.totalPrice || 0) - (order.amountPaid || 0)) / 100).toLocaleString()}
+                        </TableCell>
+                      )}
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
                           {(isAdmin || isSupport) && (
@@ -298,7 +305,7 @@ export default function OrdersPage() {
                 })}
                 {(!todayOrders || todayOrders.length === 0) && (
                   <TableRow className="border-slate-800">
-                    <TableCell colSpan={canSeePaymentStatus ? 8 : 7} className="text-center text-slate-500 py-8">
+                    <TableCell colSpan={10} className="text-center text-slate-500 py-8">
                       No orders for today
                     </TableCell>
                   </TableRow>
@@ -334,13 +341,14 @@ export default function OrdersPage() {
             <Table>
               <TableHeader className="bg-slate-900/50">
                 <TableRow className="border-slate-800">
-                  <TableHead className="text-slate-400">Date</TableHead>
+                  <TableHead className="text-slate-400">Date Placed</TableHead>
                   <TableHead className="text-slate-400">Order ID</TableHead>
                   <TableHead className="text-slate-400">Client</TableHead>
                   <TableHead className="text-slate-400">Services</TableHead>
                   <TableHead className="text-slate-400">Designer</TableHead>
                   <TableHead className="text-slate-400">Status</TableHead>
                   {canSeePaymentStatus && <TableHead className="text-slate-400">Payment</TableHead>}
+                  {canSeeFinance && <TableHead className="text-slate-400">Remaining</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -359,11 +367,16 @@ export default function OrdersPage() {
                         </Badge>
                       </TableCell>
                     )}
+                    {canSeeFinance && (
+                      <TableCell className="text-red-400 font-medium">
+                        ₨{(((order.totalPrice || 0) - (order.amountPaid || 0)) / 100).toLocaleString()}
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
                 {(!monthlyOrders || monthlyOrders.length === 0) && (
                   <TableRow className="border-slate-800">
-                    <TableCell colSpan={canSeePaymentStatus ? 7 : 6} className="text-center text-slate-500 py-8">
+                    <TableCell colSpan={10} className="text-center text-slate-500 py-8">
                       No orders for this month
                     </TableCell>
                   </TableRow>
@@ -381,10 +394,11 @@ function CreateOrderForm({ designers, onSuccess }: { designers: User[]; onSucces
   const { toast } = useToast();
   const [clientName, setClientName] = useState("");
   const [clientPhone, setClientPhone] = useState("");
-  const [clientEmail, setClientEmail] = useState("");
   const [deadline, setDeadline] = useState("");
   const [assignedToId, setAssignedToId] = useState("");
   const [paymentStatus, setPaymentStatus] = useState("pending");
+  const [totalBill, setTotalBill] = useState("");
+  const [amountPaid, setAmountPaid] = useState("");
   const [notes, setNotes] = useState("");
   const [services, setServices] = useState([{ serviceType: "", quantity: 1, instructions: "" }]);
 
@@ -439,10 +453,11 @@ function CreateOrderForm({ designers, onSuccess }: { designers: User[]; onSucces
     createMutation.mutate({
       clientName: clientName.trim(),
       clientPhone: clientPhone.trim(),
-      clientEmail: clientEmail.trim() || null,
       deadline: new Date(deadline).toISOString(),
       assignedToId: assignedToId ? parseInt(assignedToId) : null,
       paymentStatus,
+      totalPrice: totalBill ? Math.round(parseFloat(totalBill) * 100) : 0,
+      amountPaid: amountPaid ? Math.round(parseFloat(amountPaid) * 100) : 0,
       notes: notes.trim() || null,
       services: services.filter(s => s.serviceType).map(s => ({
         serviceType: s.serviceType,
@@ -477,17 +492,6 @@ function CreateOrderForm({ designers, onSuccess }: { designers: User[]; onSucces
               data-testid="input-client-phone"
             />
           </div>
-        </div>
-        <div className="space-y-2">
-          <Label className="text-slate-300">Email (Optional)</Label>
-          <Input 
-            value={clientEmail} 
-            onChange={(e) => setClientEmail(e.target.value)} 
-            className="bg-slate-950 border-slate-800 text-white"
-            placeholder="client@email.com"
-            type="email"
-            data-testid="input-client-email"
-          />
         </div>
       </div>
 
@@ -576,16 +580,53 @@ function CreateOrderForm({ designers, onSuccess }: { designers: User[]; onSucces
       </div>
 
       <div className="space-y-4">
-        <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Payment</h4>
-        <Select value={paymentStatus} onValueChange={setPaymentStatus}>
-          <SelectTrigger className="bg-slate-950 border-slate-800 text-white w-40" data-testid="select-payment-status">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className="bg-slate-900 border-slate-800 text-white">
-            <SelectItem value="pending">Pending</SelectItem>
-            <SelectItem value="paid">Paid</SelectItem>
-          </SelectContent>
-        </Select>
+        <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Billing (PKR)</h4>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="space-y-2">
+            <Label className="text-slate-300">Total Bill (₨)</Label>
+            <Input 
+              type="number"
+              min="0"
+              step="0.01"
+              value={totalBill} 
+              onChange={(e) => setTotalBill(e.target.value)} 
+              className="bg-slate-950 border-slate-800 text-white"
+              placeholder="0.00"
+              data-testid="input-total-bill"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-slate-300">Amount Paid (₨)</Label>
+            <Input 
+              type="number"
+              min="0"
+              step="0.01"
+              value={amountPaid} 
+              onChange={(e) => setAmountPaid(e.target.value)} 
+              className="bg-slate-950 border-slate-800 text-white"
+              placeholder="0.00"
+              data-testid="input-amount-paid"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-slate-300">Remaining</Label>
+            <div className="h-9 flex items-center px-3 bg-slate-950 border border-slate-800 rounded-md text-white">
+              ₨{((parseFloat(totalBill) || 0) - (parseFloat(amountPaid) || 0)).toFixed(2)}
+            </div>
+          </div>
+        </div>
+        <div className="space-y-2">
+          <Label className="text-slate-300">Payment Status</Label>
+          <Select value={paymentStatus} onValueChange={setPaymentStatus}>
+            <SelectTrigger className="bg-slate-950 border-slate-800 text-white w-40" data-testid="select-payment-status">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="bg-slate-900 border-slate-800 text-white">
+              <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="paid">Paid</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <div className="space-y-2">
