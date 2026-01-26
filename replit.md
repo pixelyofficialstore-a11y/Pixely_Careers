@@ -92,3 +92,10 @@ All monetary values displayed in PKR (₨), stored as integers (cents) in the da
 - Dashboard with business-focused financial metrics (Admin only)
 - Dark mode UI with blue primary (#2563EB)
 - Pixely Careers logo integrated
+- Order status system updated to: New, Working, Ready, Delivered, Canceled
+- Deadline field removed entirely; replaced with automatic readyDate tracking when status changes to Ready
+- Services column now shows collapsed count "X Services" with hover tooltip showing details
+- Order deletion implemented as soft delete via "Canceled" status (Admin/Support only)
+- Payment status (Pending/Paid) editable by all roles (Admin, Support, Designer)
+- Role-based dashboards: Designer sees only assigned orders with no finance, Support sees operational data, Admin has full access
+- Designer status transitions restricted: can only change Working→Ready or Ready→Delivered
