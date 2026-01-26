@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+import logoUrl from "@assets/rr__1500_x_500_px_-removebg-preview_1769451275347.png";
+
 export function Sidebar() {
   const [location] = useLocation();
   const { user, logoutMutation } = useAuth();
@@ -32,9 +34,7 @@ export function Sidebar() {
     <aside className="hidden lg:flex flex-col w-64 bg-slate-950 border-r border-slate-800 h-screen fixed left-0 top-0 z-50">
       <div className="p-6">
         <div className="flex items-center gap-3 mb-8">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-sky-400 flex items-center justify-center">
-            <span className="text-white font-bold font-display text-lg">P</span>
-          </div>
+          <img src={logoUrl} alt="PixelCRM" className="h-8 w-auto" />
           <h1 className="text-xl font-bold font-display tracking-tight text-white">Pixely_CRM</h1>
         </div>
 
