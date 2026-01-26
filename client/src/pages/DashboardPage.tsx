@@ -1,38 +1,45 @@
-import { useStats } from "@/hooks/use-stats";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { 
-  Users, 
   ShoppingCart, 
-  MessageSquare, 
   DollarSign, 
   ArrowUpRight,
   Clock,
-  CheckCircle2
+  CheckCircle2,
+  XCircle,
+  TrendingUp,
+  Calendar,
+  Users
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { format, isToday, startOfMonth } from "date-fns";
+import type { OrderWithServices } from "@shared/schema";
 
 function StatCard({ 
   title, 
   value, 
   icon: Icon, 
   trend, 
-  color = "blue" 
+  color = "blue",
+  testId
 }: { 
   title: string; 
   value: string | number; 
   icon: any; 
   trend?: string;
-  color?: "blue" | "green" | "purple" | "orange";
+  color?: "blue" | "green" | "purple" | "orange" | "red";
+  testId?: string;
 }) {
   const colors = {
     blue: "bg-blue-500/10 text-blue-500",
     green: "bg-green-500/10 text-green-500",
     purple: "bg-purple-500/10 text-purple-500",
     orange: "bg-orange-500/10 text-orange-500",
+    red: "bg-red-500/10 text-red-500",
   };
 
   return (
-    <div className="glass-panel p-6 rounded-2xl relative overflow-hidden group hover:border-slate-700 transition-colors">
+    <div className="glass-panel p-6 rounded-2xl relative overflow-hidden group hover:border-slate-700 transition-colors" data-testid={testId}>
       <div className="flex justify-between items-start mb-4">
         <div className={cn("p-3 rounded-xl", colors[color])}>
           <Icon className="w-6 h-6" />
@@ -49,13 +56,13 @@ function StatCard({
         <h3 className="text-2xl font-bold font-display text-white">{value}</h3>
       </div>
       
-      {/* Decorative background glow */}
       <div className={cn(
         "absolute -right-6 -bottom-6 w-24 h-24 rounded-full blur-2xl opacity-0 group-hover:opacity-20 transition-opacity",
         color === "blue" && "bg-blue-500",
         color === "green" && "bg-green-500",
         color === "purple" && "bg-purple-500",
         color === "orange" && "bg-orange-500",
+        color === "red" && "bg-red-500",
       )} />
     </div>
   );
@@ -63,96 +70,340 @@ function StatCard({
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const { data: stats, isLoading } = useStats();
+  
+  const { data: orders, isLoading } = useQuery<OrderWithServices[]>({
+    queryKey: ["/api/orders"],
+  });
 
   if (isLoading) return null;
 
   const isAdmin = user?.role === "admin";
+  const isSupport = user?.role === "support";
+  const isDesigner = user?.role === "designer";
 
+  // Filter orders for dashboard stats
+  const now = new Date();
+  const monthStart = startOfMonth(now);
+  
+  const todayOrders = orders?.filter(o => isToday(new Date(o.createdAt!))) || [];
+  const monthlyOrders = orders?.filter(o => new Date(o.createdAt!) >= monthStart) || [];
+  const pendingOrders = orders?.filter(o => o.status === 'new' || o.status === 'working') || [];
+  const canceledOrders = orders?.filter(o => o.status === 'canceled') || [];
+  const readyOrders = orders?.filter(o => o.status === 'ready') || [];
+  const deliveredOrders = orders?.filter(o => o.status === 'delivered') || [];
+  
+  // Finance calculations (Admin only)
+  const totalCollected = orders?.reduce((acc, o) => acc + (o.amountPaid || 0), 0) || 0;
+  const totalBilled = orders?.reduce((acc, o) => acc + (o.totalPrice || 0), 0) || 0;
+  const outstandingBalance = totalBilled - totalCollected;
+  const monthlyCollected = monthlyOrders.reduce((acc, o) => acc + (o.amountPaid || 0), 0);
+
+  // Ready-based metrics (for Admin reports)
+  const readyThisMonth = orders?.filter(o => o.readyDate && new Date(o.readyDate) >= monthStart) || [];
+
+  // Designer Dashboard
+  if (isDesigner) {
+    return (
+      <div className="p-8 space-y-8">
+        <div>
+          <h1 className="text-3xl font-bold font-display text-white mb-2">My Dashboard</h1>
+          <p className="text-slate-400">Welcome back, {user?.name}. Here are your assigned orders.</p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <StatCard 
+            title="Today's Orders" 
+            value={todayOrders.length} 
+            icon={Calendar} 
+            color="blue"
+            testId="stat-today-orders"
+          />
+          <StatCard 
+            title="This Month's Orders" 
+            value={monthlyOrders.length} 
+            icon={ShoppingCart}
+            color="purple"
+            testId="stat-monthly-orders"
+          />
+          <StatCard 
+            title="Pending Orders" 
+            value={pendingOrders.length} 
+            icon={Clock}
+            color="orange"
+            testId="stat-pending-orders"
+          />
+          <StatCard 
+            title="Canceled Orders" 
+            value={canceledOrders.length} 
+            icon={XCircle}
+            color="red"
+            testId="stat-canceled-orders"
+          />
+        </div>
+
+        <div className="glass-panel p-6 rounded-2xl">
+          <h3 className="text-lg font-bold font-display text-white mb-4">Recent Assigned Orders</h3>
+          {orders && orders.length > 0 ? (
+            <div className="space-y-3">
+              {orders.slice(0, 5).map(order => (
+                <div key={order.id} className="flex items-center justify-between p-4 bg-slate-950/50 rounded-xl border border-slate-800">
+                  <div>
+                    <p className="font-mono text-sm text-blue-400">{order.orderNumber}</p>
+                    <p className="text-white font-medium">{order.clientName}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className={cn(
+                      "text-sm font-medium",
+                      order.status === 'new' && "text-yellow-400",
+                      order.status === 'working' && "text-blue-400",
+                      order.status === 'ready' && "text-green-400",
+                      order.status === 'delivered' && "text-slate-400",
+                      order.status === 'canceled' && "text-red-400",
+                    )}>
+                      {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+                    </p>
+                    <p className="text-xs text-slate-500">{format(new Date(order.createdAt!), "MMM dd")}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-slate-500 text-center py-8">No orders assigned to you yet.</p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Support Dashboard
+  if (isSupport) {
+    return (
+      <div className="p-8 space-y-8">
+        <div>
+          <h1 className="text-3xl font-bold font-display text-white mb-2">Support Dashboard</h1>
+          <p className="text-slate-400">Welcome back, {user?.name}. Here's the operational overview.</p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <StatCard 
+            title="Today's Orders" 
+            value={todayOrders.length} 
+            icon={Calendar} 
+            color="blue"
+            testId="stat-today-orders"
+          />
+          <StatCard 
+            title="This Month's Orders" 
+            value={monthlyOrders.length} 
+            icon={ShoppingCart}
+            color="purple"
+            testId="stat-monthly-orders"
+          />
+          <StatCard 
+            title="Pending Payment" 
+            value={orders?.filter(o => o.paymentStatus === 'pending').length || 0} 
+            icon={Clock}
+            color="orange"
+            testId="stat-pending-payment"
+          />
+          <StatCard 
+            title="Canceled Orders" 
+            value={canceledOrders.length} 
+            icon={XCircle}
+            color="red"
+            testId="stat-canceled-orders"
+          />
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="glass-panel p-6 rounded-2xl">
+            <h3 className="text-lg font-bold font-display text-white mb-4">Order Status Overview</h3>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-3 bg-slate-950/50 rounded-lg border border-slate-800">
+                <span className="text-slate-400">New</span>
+                <span className="text-white font-bold">{orders?.filter(o => o.status === 'new').length || 0}</span>
+              </div>
+              <div className="flex items-center justify-between p-3 bg-slate-950/50 rounded-lg border border-slate-800">
+                <span className="text-slate-400">Working</span>
+                <span className="text-white font-bold">{orders?.filter(o => o.status === 'working').length || 0}</span>
+              </div>
+              <div className="flex items-center justify-between p-3 bg-slate-950/50 rounded-lg border border-slate-800">
+                <span className="text-slate-400">Ready</span>
+                <span className="text-white font-bold">{readyOrders.length}</span>
+              </div>
+              <div className="flex items-center justify-between p-3 bg-slate-950/50 rounded-lg border border-slate-800">
+                <span className="text-slate-400">Delivered</span>
+                <span className="text-white font-bold">{deliveredOrders.length}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="glass-panel p-6 rounded-2xl">
+            <h3 className="text-lg font-bold font-display text-white mb-4">Payment Status</h3>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-3 bg-slate-950/50 rounded-lg border border-slate-800">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                  <span className="text-slate-400">Paid</span>
+                </div>
+                <span className="text-green-400 font-bold">{orders?.filter(o => o.paymentStatus === 'paid').length || 0}</span>
+              </div>
+              <div className="flex items-center justify-between p-3 bg-slate-950/50 rounded-lg border border-slate-800">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
+                  <span className="text-slate-400">Pending</span>
+                </div>
+                <span className="text-yellow-400 font-bold">{orders?.filter(o => o.paymentStatus === 'pending').length || 0}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Admin Dashboard (Full access)
   return (
     <div className="p-8 space-y-8">
       <div>
-        <h1 className="text-3xl font-bold font-display text-white mb-2">Dashboard</h1>
-        <p className="text-slate-400">Welcome back, {user?.name}. Here's what's happening today.</p>
+        <h1 className="text-3xl font-bold font-display text-white mb-2">Admin Dashboard</h1>
+        <p className="text-slate-400">Welcome back, {user?.name}. Here's your complete business overview.</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
         <StatCard 
           title="Today's Orders" 
-          value={stats?.orders.pending || 0} 
-          icon={ShoppingCart} 
-          trend="+5%"
+          value={todayOrders.length} 
+          icon={Calendar} 
           color="blue"
+          testId="stat-today-orders"
         />
         <StatCard 
-          title="This Month Orders" 
-          value={stats?.orders.total || 0} 
-          icon={MessageSquare}
+          title="Monthly Orders" 
+          value={monthlyOrders.length} 
+          icon={ShoppingCart}
           color="purple"
+          testId="stat-monthly-orders"
         />
         <StatCard 
-          title="Orders In Progress" 
-          value={stats?.orders.working || 0} 
+          title="Ready This Month" 
+          value={readyThisMonth.length} 
+          icon={CheckCircle2}
+          color="green"
+          testId="stat-ready-month"
+        />
+        <StatCard 
+          title="Canceled Orders" 
+          value={canceledOrders.length} 
+          icon={XCircle}
+          color="red"
+          testId="stat-canceled-orders"
+        />
+        <StatCard 
+          title="Pending Orders" 
+          value={pendingOrders.length} 
           icon={Clock}
           color="orange"
-        />
-        <StatCard 
-          title="Total Collected" 
-          value={`₨${((stats?.finance?.totalRevenue || 0) / 100).toLocaleString()}`} 
-          icon={DollarSign}
-          color="green"
+          testId="stat-pending-orders"
         />
       </div>
 
-      {isAdmin && stats?.finance && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 glass-panel p-6 rounded-2xl">
-            <h3 className="text-lg font-bold font-display text-white mb-6">Revenue Performance</h3>
-            <div className="h-64 flex items-center justify-center text-slate-500 border border-dashed border-slate-800 rounded-xl bg-slate-950/30">
-              <p>Agency Growth Metrics</p>
+      {/* Finance Section - Admin Only */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="glass-panel p-6 rounded-2xl">
+          <h3 className="text-lg font-bold font-display text-white mb-6">Financial Summary</h3>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between p-4 bg-slate-950/50 rounded-xl border border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-green-500/10 rounded-lg text-green-500">
+                  <DollarSign className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-xs text-slate-400">Total Collected</p>
+                  <p className="font-bold text-white" data-testid="stat-total-collected">₨{(totalCollected / 100).toLocaleString()}</p>
+                </div>
+              </div>
             </div>
-          </div>
-          
-          <div className="glass-panel p-6 rounded-2xl">
-            <h3 className="text-lg font-bold font-display text-white mb-6">Profit & Collections</h3>
-            <div className="space-y-6">
-              <div className="flex items-center justify-between p-4 bg-slate-950/50 rounded-xl border border-slate-800">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-green-500/10 rounded-lg text-green-500">
-                    <DollarSign className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-400">Net Revenue</p>
-                    <p className="font-bold text-white">₨{((stats.finance.totalRevenue || 0) / 100).toLocaleString()}</p>
-                  </div>
+            <div className="flex items-center justify-between p-4 bg-slate-950/50 rounded-xl border border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-500/10 rounded-lg text-blue-500">
+                  <TrendingUp className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-xs text-slate-400">Monthly Collection</p>
+                  <p className="font-bold text-white" data-testid="stat-monthly-collected">₨{(monthlyCollected / 100).toLocaleString()}</p>
                 </div>
               </div>
-              <div className="flex items-center justify-between p-4 bg-slate-950/50 rounded-xl border border-slate-800">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-blue-500/10 rounded-lg text-blue-500">
-                    <DollarSign className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-400">Current Month</p>
-                    <p className="font-bold text-white">₨{((stats.finance.monthlyRevenue || 0) / 100).toLocaleString()}</p>
-                  </div>
+            </div>
+            <div className="flex items-center justify-between p-4 bg-slate-950/50 rounded-xl border border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-orange-500/10 rounded-lg text-orange-500">
+                  <Clock className="w-5 h-5" />
                 </div>
-              </div>
-              <div className="flex items-center justify-between p-4 bg-slate-950/50 rounded-xl border border-slate-800">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-orange-500/10 rounded-lg text-orange-500">
-                    <DollarSign className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-400">Outstanding Balance</p>
-                    <p className="font-bold text-white">₨{((stats.finance.pendingPayments || 0) / 100).toLocaleString()}</p>
-                  </div>
+                <div>
+                  <p className="text-xs text-slate-400">Outstanding Balance</p>
+                  <p className="font-bold text-white" data-testid="stat-outstanding">₨{(outstandingBalance / 100).toLocaleString()}</p>
                 </div>
               </div>
             </div>
           </div>
         </div>
-      )}
+
+        <div className="glass-panel p-6 rounded-2xl">
+          <h3 className="text-lg font-bold font-display text-white mb-6">Orders by Status</h3>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between p-3 bg-slate-950/50 rounded-lg border border-slate-800">
+              <span className="text-yellow-400">New</span>
+              <span className="text-white font-bold">{orders?.filter(o => o.status === 'new').length || 0}</span>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-slate-950/50 rounded-lg border border-slate-800">
+              <span className="text-blue-400">Working</span>
+              <span className="text-white font-bold">{orders?.filter(o => o.status === 'working').length || 0}</span>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-slate-950/50 rounded-lg border border-slate-800">
+              <span className="text-green-400">Ready</span>
+              <span className="text-white font-bold">{readyOrders.length}</span>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-slate-950/50 rounded-lg border border-slate-800">
+              <span className="text-slate-400">Delivered</span>
+              <span className="text-white font-bold">{deliveredOrders.length}</span>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-slate-950/50 rounded-lg border border-slate-800">
+              <span className="text-red-400">Canceled</span>
+              <span className="text-white font-bold">{canceledOrders.length}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="glass-panel p-6 rounded-2xl">
+          <h3 className="text-lg font-bold font-display text-white mb-6">Designer Performance</h3>
+          <div className="space-y-3">
+            {orders && orders.length > 0 ? (
+              Array.from(new Set(orders.filter(o => o.assignee).map(o => o.assignee?.id))).slice(0, 5).map(designerId => {
+                const designer = orders.find(o => o.assignee?.id === designerId)?.assignee;
+                const designerOrders = orders.filter(o => o.assignedToId === designerId);
+                const completedCount = designerOrders.filter(o => o.status === 'ready' || o.status === 'delivered').length;
+                return (
+                  <div key={designerId} className="flex items-center justify-between p-3 bg-slate-950/50 rounded-lg border border-slate-800">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs text-white">
+                        {designer?.name?.charAt(0) || "?"}
+                      </div>
+                      <span className="text-slate-300">{designer?.name || "Unknown"}</span>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-white font-bold">{completedCount}/{designerOrders.length}</p>
+                      <p className="text-xs text-slate-500">completed</p>
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <p className="text-slate-500 text-center py-4">No designer data available</p>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

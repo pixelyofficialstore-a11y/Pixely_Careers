@@ -42,8 +42,14 @@ import {
   Calendar as CalendarIcon,
   Plus,
   Trash2,
-  X
+  X,
+  XCircle
 } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { OrderWithServices, User } from "@shared/schema";
@@ -90,7 +96,6 @@ export default function OrdersPage() {
   const isAdmin = user?.role === "admin";
   const isSupport = user?.role === "support";
   const canSeeFinance = isAdmin;
-  const canSeePaymentStatus = isAdmin || isSupport;
   const canCreateOrder = isAdmin || isSupport;
 
   const filteredOrders = orders?.filter(order => {
@@ -102,8 +107,7 @@ export default function OrdersPage() {
 
   const todayOrders = filteredOrders?.filter(order => {
     const createdDate = new Date(order.createdAt!);
-    const deadlineDate = new Date(order.deadline);
-    return isToday(createdDate) || isToday(deadlineDate) || (isPast(deadlineDate) && order.status !== "delivered");
+    return isToday(createdDate) || (order.status !== "delivered" && order.status !== "canceled");
   });
 
   const monthlyOrders = filteredOrders?.filter(order => {
@@ -112,18 +116,39 @@ export default function OrdersPage() {
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case "pending": return <Badge variant="secondary" className="bg-yellow-500/10 text-yellow-500 border-yellow-500/20">New</Badge>;
+      case "new": return <Badge variant="secondary" className="bg-yellow-500/10 text-yellow-500 border-yellow-500/20">New</Badge>;
       case "working": return <Badge variant="secondary" className="bg-blue-500/10 text-blue-500 border-blue-500/20">Working</Badge>;
       case "ready": return <Badge variant="secondary" className="bg-green-500/10 text-green-500 border-green-500/20">Ready</Badge>;
       case "delivered": return <Badge variant="secondary" className="bg-slate-500/10 text-slate-400 border-slate-500/20">Delivered</Badge>;
+      case "canceled": return <Badge variant="secondary" className="bg-red-500/10 text-red-500 border-red-500/20">Canceled</Badge>;
       default: return null;
     }
   };
 
   const getServicesDisplay = (services: any[]) => {
     if (!services || services.length === 0) return "-";
-    return services.map(s => `${s.quantity}x ${s.serviceType}`).join(", ");
+    const totalServices = services.reduce((acc, s) => acc + (s.quantity || 1), 0);
+    const servicesList = services.map(s => `${s.quantity}x ${s.serviceType}`);
+    
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="cursor-pointer underline decoration-dotted underline-offset-2">
+            {totalServices} {totalServices === 1 ? "Service" : "Services"}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent className="bg-slate-800 border-slate-700 text-white">
+          <ul className="list-disc list-inside space-y-1">
+            {servicesList.map((s, i) => (
+              <li key={i} className="text-sm">{s}</li>
+            ))}
+          </ul>
+        </TooltipContent>
+      </Tooltip>
+    );
   };
+  
+  const canDelete = isAdmin || isSupport;
 
   return (
     <div className="p-8 space-y-8">
@@ -212,22 +237,38 @@ export default function OrdersPage() {
                   <TableHead className="text-slate-400">Client</TableHead>
                   <TableHead className="text-slate-400">Services</TableHead>
                   <TableHead className="text-slate-400">Designer</TableHead>
-                  <TableHead className="text-slate-400">Deadline</TableHead>
                   <TableHead className="text-slate-400">Status</TableHead>
-                  {canSeePaymentStatus && <TableHead className="text-slate-400">Payment</TableHead>}
+                  <TableHead className="text-slate-400">Payment</TableHead>
                   {canSeeFinance && <TableHead className="text-slate-400">Remaining</TableHead>}
                   <TableHead className="text-right text-slate-400">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {todayOrders?.map((order) => {
-                  const isOverdue = isPast(new Date(order.deadline)) && order.status !== 'delivered';
+                  const isDesigner = user?.role === 'designer';
+                  // Designers can only change: Working→Ready, Ready→Delivered
+                  const getStatusOptions = () => {
+                    if (isAdmin || isSupport) {
+                      return [
+                        { value: "new", label: "New" },
+                        { value: "working", label: "Working" },
+                        { value: "ready", label: "Ready" },
+                        { value: "delivered", label: "Delivered" },
+                        { value: "canceled", label: "Canceled" },
+                      ];
+                    }
+                    // Designer restrictions
+                    if (order.status === 'working') return [{ value: "working", label: "Working" }, { value: "ready", label: "Ready" }];
+                    if (order.status === 'ready') return [{ value: "ready", label: "Ready" }, { value: "delivered", label: "Delivered" }];
+                    return [{ value: order.status, label: order.status.charAt(0).toUpperCase() + order.status.slice(1) }];
+                  };
+                  
                   return (
-                    <TableRow key={order.id} className={cn("border-slate-800 hover:bg-slate-900/50", isOverdue && "bg-red-500/5")} data-testid={`row-order-${order.id}`}>
+                    <TableRow key={order.id} className="border-slate-800 hover:bg-slate-900/50" data-testid={`row-order-${order.id}`}>
                       <TableCell className="font-mono text-xs text-blue-400">{order.orderNumber}</TableCell>
                       <TableCell className="text-slate-400 text-xs">{format(new Date(order.createdAt!), "MMM dd, yyyy")}</TableCell>
                       <TableCell className="text-white font-medium">{order.clientName}</TableCell>
-                      <TableCell className="text-slate-300 text-sm max-w-[200px] truncate">{getServicesDisplay(order.services)}</TableCell>
+                      <TableCell className="text-slate-300 text-sm">{getServicesDisplay(order.services)}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <div className="w-6 h-6 rounded-full bg-slate-800 flex items-center justify-center text-[10px] text-slate-400">
@@ -235,9 +276,6 @@ export default function OrdersPage() {
                           </div>
                           <span className="text-sm text-slate-300">{order.assignee?.name || "Unassigned"}</span>
                         </div>
-                      </TableCell>
-                      <TableCell className={cn("text-slate-300", isOverdue && "text-red-400 font-semibold")}>
-                        {format(new Date(order.deadline), "MMM dd, HH:mm")}
                       </TableCell>
                       <TableCell>
                         <Select 
@@ -248,23 +286,33 @@ export default function OrdersPage() {
                             <SelectValue>{getStatusBadge(order.status)}</SelectValue>
                           </SelectTrigger>
                           <SelectContent className="bg-slate-900 border-slate-800">
-                            <SelectItem value="pending">Pending</SelectItem>
-                            <SelectItem value="working">Working</SelectItem>
-                            <SelectItem value="ready">Ready</SelectItem>
-                            <SelectItem value="delivered">Delivered</SelectItem>
+                            {getStatusOptions().map(opt => (
+                              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </TableCell>
-                      {canSeePaymentStatus && (
-                        <TableCell>
-                          <Badge variant="outline" className={cn(
-                            "border-0 px-0",
-                            order.paymentStatus === 'paid' ? "text-green-500" : "text-yellow-500"
-                          )}>
-                            {order.paymentStatus === 'paid' ? "Paid" : "Pending"}
-                          </Badge>
-                        </TableCell>
-                      )}
+                      <TableCell>
+                        <Select 
+                          defaultValue={order.paymentStatus || "pending"} 
+                          onValueChange={(val) => updateOrderMutation.mutate({ id: order.id, updates: { paymentStatus: val } })}
+                        >
+                          <SelectTrigger className="w-24 bg-transparent border-0 h-auto p-0 focus:ring-0 shadow-none hover:bg-white/5 rounded px-2 py-1" data-testid={`select-payment-${order.id}`}>
+                            <SelectValue>
+                              <Badge variant="outline" className={cn(
+                                "border-0",
+                                order.paymentStatus === 'paid' ? "text-green-500" : "text-yellow-500"
+                              )}>
+                                {order.paymentStatus === 'paid' ? "Paid" : "Pending"}
+                              </Badge>
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectContent className="bg-slate-900 border-slate-800">
+                            <SelectItem value="pending">Pending</SelectItem>
+                            <SelectItem value="paid">Paid</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
                       {canSeeFinance && (
                         <TableCell className="text-red-400 font-medium">
                           ₨{(((order.totalPrice || 0) - (order.amountPaid || 0)) / 100).toLocaleString()}
@@ -298,6 +346,17 @@ export default function OrdersPage() {
                             </Dialog>
                           )}
                           <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-white" data-testid={`button-view-${order.id}`}><Eye className="w-4 h-4" /></Button>
+                          {canDelete && order.status !== 'canceled' && (
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8 text-red-400 hover:text-red-300" 
+                              onClick={() => updateOrderMutation.mutate({ id: order.id, updates: { status: 'canceled' } })}
+                              data-testid={`button-cancel-${order.id}`}
+                            >
+                              <XCircle className="w-4 h-4" />
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -347,7 +406,7 @@ export default function OrdersPage() {
                   <TableHead className="text-slate-400">Services</TableHead>
                   <TableHead className="text-slate-400">Designer</TableHead>
                   <TableHead className="text-slate-400">Status</TableHead>
-                  {canSeePaymentStatus && <TableHead className="text-slate-400">Payment</TableHead>}
+                  <TableHead className="text-slate-400">Payment</TableHead>
                   {canSeeFinance && <TableHead className="text-slate-400">Remaining</TableHead>}
                 </TableRow>
               </TableHeader>
@@ -360,13 +419,11 @@ export default function OrdersPage() {
                     <TableCell className="text-slate-300 text-sm">{getServicesDisplay(order.services)}</TableCell>
                     <TableCell className="text-slate-300">{order.assignee?.name || "Unassigned"}</TableCell>
                     <TableCell>{getStatusBadge(order.status)}</TableCell>
-                    {canSeePaymentStatus && (
-                      <TableCell>
-                        <Badge variant="outline" className={cn("border-0", order.paymentStatus === 'paid' ? "text-green-500" : "text-yellow-500")}>
-                          {order.paymentStatus === 'paid' ? "Paid" : "Pending"}
-                        </Badge>
-                      </TableCell>
-                    )}
+                    <TableCell>
+                      <Badge variant="outline" className={cn("border-0", order.paymentStatus === 'paid' ? "text-green-500" : "text-yellow-500")}>
+                        {order.paymentStatus === 'paid' ? "Paid" : "Pending"}
+                      </Badge>
+                    </TableCell>
                     {canSeeFinance && (
                       <TableCell className="text-red-400 font-medium">
                         ₨{(((order.totalPrice || 0) - (order.amountPaid || 0)) / 100).toLocaleString()}
@@ -394,7 +451,6 @@ function CreateOrderForm({ designers, onSuccess }: { designers: User[]; onSucces
   const { toast } = useToast();
   const [clientName, setClientName] = useState("");
   const [clientPhone, setClientPhone] = useState("");
-  const [deadline, setDeadline] = useState("");
   const [assignedToId, setAssignedToId] = useState("");
   const [paymentStatus, setPaymentStatus] = useState("pending");
   const [totalBill, setTotalBill] = useState("");
@@ -441,7 +497,6 @@ function CreateOrderForm({ designers, onSuccess }: { designers: User[]; onSucces
     const missingFields: string[] = [];
     if (!clientName.trim()) missingFields.push("Client Name");
     if (!clientPhone.trim()) missingFields.push("WhatsApp Number");
-    if (!deadline) missingFields.push("Expected Delivery");
     if (services.every(s => !s.serviceType)) missingFields.push("At least one service");
     
     if (missingFields.length > 0) {
@@ -456,7 +511,6 @@ function CreateOrderForm({ designers, onSuccess }: { designers: User[]; onSucces
     createMutation.mutate({
       clientName: clientName.trim(),
       clientPhone: clientPhone.trim(),
-      deadline: new Date(deadline).toISOString(),
       assignedToId: assignedToId ? parseInt(assignedToId) : null,
       paymentStatus,
       totalPrice: totalBill ? Math.round(parseFloat(totalBill) * 100) : 0,
@@ -503,30 +557,18 @@ function CreateOrderForm({ designers, onSuccess }: { designers: User[]; onSucces
 
       <div className="space-y-4">
         <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Order Details</h4>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label className="text-slate-300">Expected Delivery *</Label>
-            <Input 
-              type="datetime-local" 
-              value={deadline} 
-              onChange={(e) => setDeadline(e.target.value)} 
-              className="bg-slate-950 border-slate-800 text-white"
-              data-testid="input-deadline"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label className="text-slate-300">Assigned Designer</Label>
-            <Select value={assignedToId} onValueChange={setAssignedToId}>
-              <SelectTrigger className="bg-slate-950 border-slate-800 text-white" data-testid="select-designer">
-                <SelectValue placeholder="Select designer" />
-              </SelectTrigger>
-              <SelectContent className="bg-slate-900 border-slate-800 text-white">
-                {designers.map(d => (
-                  <SelectItem key={d.id} value={d.id.toString()}>{d.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+        <div className="space-y-2">
+          <Label className="text-slate-300">Assigned Designer</Label>
+          <Select value={assignedToId} onValueChange={setAssignedToId}>
+            <SelectTrigger className="bg-slate-950 border-slate-800 text-white" data-testid="select-designer">
+              <SelectValue placeholder="Select designer" />
+            </SelectTrigger>
+            <SelectContent className="bg-slate-900 border-slate-800 text-white">
+              {designers.map(d => (
+                <SelectItem key={d.id} value={d.id.toString()}>{d.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 

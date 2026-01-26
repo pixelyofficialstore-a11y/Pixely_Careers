@@ -179,9 +179,13 @@ export async function registerRoutes(
         clientName: z.string().min(1, "Client name is required"),
         clientPhone: z.string().min(1, "Phone number is required"),
         clientEmail: z.string().email().optional().nullable(),
-        deadline: z.string().datetime(),
         assignedToId: z.number().int().positive().optional().nullable(),
-        paymentStatus: z.enum(["pending", "paid", "partial"]).optional(),
+        paymentStatus: z.enum(["pending", "paid"]).optional(),
+        totalPrice: z.number().int().optional(),
+        amountPaid: z.number().int().optional(),
+        campaign: z.string().optional().nullable(),
+        adSet: z.string().optional().nullable(),
+        creative: z.string().optional().nullable(),
         notes: z.string().optional().nullable(),
       });
       
@@ -193,7 +197,6 @@ export async function registerRoutes(
       const order = await storage.createOrder({
         ...orderData,
         orderNumber,
-        deadline: new Date(orderData.deadline), // Convert string to Date
         createdById: user.id,
       }, services);
       
@@ -232,19 +235,41 @@ export async function registerRoutes(
 
   app.patch(api.orders.update.path, requireAuth, async (req, res) => {
     const orderId = Number(req.params.id);
-    const updates = api.orders.update.input.parse(req.body);
+    const updates = { ...req.body };
     const user = req.user as User;
     
     const existingOrder = await storage.getOrder(orderId);
     if (!existingOrder) return res.sendStatus(404);
 
-    // Permission checks
+    // Permission checks for designers
     if (user.role === 'designer') {
       if (existingOrder.assignedToId !== user.id) return res.sendStatus(403);
-      // Designers can only update status and attachments
-      const allowedUpdates = ['status', 'attachments'];
+      
+      // Designers can only update status and paymentStatus
+      const allowedUpdates = ['status', 'paymentStatus'];
       const keys = Object.keys(updates);
       if (keys.some(k => !allowedUpdates.includes(k))) return res.sendStatus(403);
+      
+      // Enforce status change restrictions for designers
+      if (updates.status) {
+        const currentStatus = existingOrder.status;
+        const newStatus = updates.status;
+        
+        // Designers can only: working→ready, ready→delivered
+        const validTransitions: Record<string, string[]> = {
+          'working': ['ready'],
+          'ready': ['delivered'],
+        };
+        
+        if (!validTransitions[currentStatus]?.includes(newStatus)) {
+          return res.status(403).json({ message: "You can only change status: Working→Ready or Ready→Delivered" });
+        }
+      }
+    }
+    
+    // Record readyDate when status changes to "ready"
+    if (updates.status === 'ready' && existingOrder.status !== 'ready') {
+      updates.readyDate = new Date();
     }
 
     const updatedOrder = await storage.updateOrder(orderId, updates);
@@ -363,29 +388,29 @@ async function seedDatabase() {
 
   // Create Orders
   await storage.createOrder({
-    orderNumber: "PX-006-105",
     clientName: "Banee Pasth",
-    serviceType: "CV Design",
-    description: "Professional CV for Tech industry",
+    clientPhone: "+92 300 1234567",
     status: "working",
     priority: "normal",
     assignedToId: designer.id,
-    deadline: new Date(Date.now() + 86400000), // Tomorrow
-    price: 15000, // $150.00
-    amountPaid: 10000,
-  });
+    totalPrice: 1500000, // PKR 15,000
+    amountPaid: 1000000, // PKR 10,000
+    paymentStatus: "pending",
+    orderNumber: await storage.generateOrderNumber(),
+    createdById: admin.id,
+  }, [{ serviceType: "ATS CV", quantity: 1, instructions: "Professional CV for Tech industry" }]);
 
   await storage.createOrder({
-    orderNumber: "PX-006-106",
     clientName: "John Doe",
-    serviceType: "LinkedIn Optimization",
-    description: "Full profile revamp",
-    status: "pending",
+    clientPhone: "+92 333 9876543",
+    status: "new",
     priority: "high",
-    deadline: new Date(Date.now() + 172800000), // 2 days
-    price: 20000,
+    totalPrice: 2000000, // PKR 20,000
     amountPaid: 0,
-  });
+    paymentStatus: "pending",
+    orderNumber: await storage.generateOrderNumber(),
+    createdById: support.id,
+  }, [{ serviceType: "LinkedIn Profile", quantity: 1, instructions: "Full profile revamp" }]);
 
   // Create Chats
   const chat1 = await storage.createChat({

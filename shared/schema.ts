@@ -5,7 +5,7 @@ import { relations } from "drizzle-orm";
 
 // === ENUMS ===
 export const userRoles = ["admin", "support", "designer"] as const;
-export const orderStatuses = ["pending", "working", "ready", "delivered"] as const;
+export const orderStatuses = ["new", "working", "ready", "delivered", "canceled"] as const;
 export const chatStatuses = ["new", "changes", "satisfied", "issues"] as const;
 export const priorities = ["normal", "high", "urgent"] as const;
 
@@ -31,10 +31,10 @@ export const orders = pgTable("orders", {
   clientName: text("client_name").notNull(),
   clientPhone: text("client_phone"),
   clientEmail: text("client_email"),
-  status: text("status", { enum: orderStatuses }).notNull().default("pending"),
+  status: text("status", { enum: orderStatuses }).notNull().default("new"),
   priority: text("priority", { enum: priorities }).notNull().default("normal"),
   assignedToId: integer("assigned_to_id").references(() => users.id), // Designer ID
-  deadline: timestamp("deadline").notNull(),
+  readyDate: timestamp("ready_date"), // Date when status changed to Ready - for reporting
   paymentStatus: text("payment_status").default("pending"), // "paid" or "pending"
   totalPrice: integer("total_price").notNull().default(0), // In cents, Admin only
   amountPaid: integer("amount_paid").default(0),
@@ -53,7 +53,7 @@ export const orderServices = pgTable("order_services", {
   serviceType: text("service_type").notNull(), // ATS CV, Professional CV, LinkedIn, etc.
   quantity: integer("quantity").notNull().default(1),
   instructions: text("instructions"),
-  status: text("status", { enum: orderStatuses }).notNull().default("pending"),
+  status: text("status", { enum: orderStatuses }).notNull().default("new"),
 });
 
 // Chats (Mock WhatsApp)
@@ -139,7 +139,7 @@ export const messagesRelations = relations(messages, ({ one }) => ({
 
 // === SCHEMAS ===
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
-export const insertOrderSchema = createInsertSchema(orders).omit({ id: true, createdAt: true, orderNumber: true });
+export const insertOrderSchema = createInsertSchema(orders).omit({ id: true, createdAt: true });
 export const insertOrderServiceSchema = createInsertSchema(orderServices).omit({ id: true });
 export const insertChatSchema = createInsertSchema(chats).omit({ id: true, lastMessageAt: true, unreadCount: true });
 export const insertMessageSchema = createInsertSchema(messages).omit({ id: true, createdAt: true });
@@ -152,6 +152,7 @@ export type InsertOrder = z.infer<typeof insertOrderSchema>;
 export type OrderService = typeof orderServices.$inferSelect;
 export type InsertOrderService = z.infer<typeof insertOrderServiceSchema>;
 export type Chat = typeof chats.$inferSelect;
+export type InsertChat = z.infer<typeof insertChatSchema>;
 export type Message = typeof messages.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
 export type UserRole = (typeof userRoles)[number];

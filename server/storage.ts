@@ -214,10 +214,11 @@ export class DatabaseStorage implements IStorage {
       total: allOrders.length,
       today: todayOrders.length,
       monthly: monthlyOrders.length,
-      pending: allOrders.filter(o => o.status === 'pending').length,
+      new: allOrders.filter(o => o.status === 'new').length,
       working: allOrders.filter(o => o.status === 'working').length,
       ready: allOrders.filter(o => o.status === 'ready').length,
       delivered: allOrders.filter(o => o.status === 'delivered').length,
+      canceled: allOrders.filter(o => o.status === 'canceled').length,
     };
 
     const totalRevenue = allOrders.reduce((acc, curr) => acc + (curr.amountPaid || 0), 0);
