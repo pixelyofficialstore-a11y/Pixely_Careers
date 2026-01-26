@@ -399,6 +399,9 @@ function CreateOrderForm({ designers, onSuccess }: { designers: User[]; onSucces
   const [paymentStatus, setPaymentStatus] = useState("pending");
   const [totalBill, setTotalBill] = useState("");
   const [amountPaid, setAmountPaid] = useState("");
+  const [campaign, setCampaign] = useState("");
+  const [adSet, setAdSet] = useState("");
+  const [creative, setCreative] = useState("");
   const [notes, setNotes] = useState("");
   const [services, setServices] = useState([{ serviceType: "", quantity: 1, instructions: "" }]);
 
@@ -458,6 +461,9 @@ function CreateOrderForm({ designers, onSuccess }: { designers: User[]; onSucces
       paymentStatus,
       totalPrice: totalBill ? Math.round(parseFloat(totalBill) * 100) : 0,
       amountPaid: amountPaid ? Math.round(parseFloat(amountPaid) * 100) : 0,
+      campaign: campaign.trim() || null,
+      adSet: adSet.trim() || null,
+      creative: creative.trim() || null,
       notes: notes.trim() || null,
       services: services.filter(s => s.serviceType).map(s => ({
         serviceType: s.serviceType,
@@ -626,6 +632,42 @@ function CreateOrderForm({ designers, onSuccess }: { designers: User[]; onSucces
               <SelectItem value="paid">Paid</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Marketing</h4>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="space-y-2">
+            <Label className="text-slate-300">Campaign</Label>
+            <Input 
+              value={campaign} 
+              onChange={(e) => setCampaign(e.target.value)} 
+              className="bg-slate-950 border-slate-800 text-white"
+              placeholder="Campaign name..."
+              data-testid="input-campaign"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-slate-300">Ad Set</Label>
+            <Input 
+              value={adSet} 
+              onChange={(e) => setAdSet(e.target.value)} 
+              className="bg-slate-950 border-slate-800 text-white"
+              placeholder="Ad set name..."
+              data-testid="input-ad-set"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-slate-300">Creative</Label>
+            <Input 
+              value={creative} 
+              onChange={(e) => setCreative(e.target.value)} 
+              className="bg-slate-950 border-slate-800 text-white"
+              placeholder="Creative name..."
+              data-testid="input-creative"
+            />
+          </div>
         </div>
       </div>
 

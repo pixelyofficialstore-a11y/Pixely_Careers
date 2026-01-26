@@ -38,6 +38,9 @@ export const orders = pgTable("orders", {
   paymentStatus: text("payment_status").default("pending"), // "paid" or "pending"
   totalPrice: integer("total_price").notNull().default(0), // In cents, Admin only
   amountPaid: integer("amount_paid").default(0),
+  campaign: text("campaign"),
+  adSet: text("ad_set"),
+  creative: text("creative"),
   notes: text("notes"),
   createdById: integer("created_by_id").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
