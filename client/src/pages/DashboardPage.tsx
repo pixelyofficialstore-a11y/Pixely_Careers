@@ -78,15 +78,15 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard 
-          title="New Orders" 
+          title="Today's Orders" 
           value={stats?.orders.pending || 0} 
           icon={ShoppingCart} 
-          trend="+12%"
+          trend="+5%"
           color="blue"
         />
         <StatCard 
-          title="Active Chats" 
-          value={stats?.chats.active || 0} 
+          title="This Month Orders" 
+          value={stats?.orders.total || 0} 
           icon={MessageSquare}
           color="purple"
         />
@@ -97,9 +97,9 @@ export default function DashboardPage() {
           color="orange"
         />
         <StatCard 
-          title="Delivered" 
-          value={stats?.orders.delivered || 0} 
-          icon={CheckCircle2}
+          title="Total Revenue" 
+          value={`$${((stats?.finance?.totalRevenue || 0) / 100).toLocaleString()}`} 
+          icon={DollarSign}
           color="green"
         />
       </div>
