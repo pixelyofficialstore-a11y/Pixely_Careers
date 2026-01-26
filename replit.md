@@ -1,0 +1,81 @@
+# PixelCRM (Pixely Careers)
+
+## Overview
+
+PixelCRM is an internal agency management platform for Pixely Careers, designed to manage orders for ATS CV, LinkedIn optimization, and Cover Letter services. The system implements role-based access control with three user types (Admin, Support, Designer) and provides order tracking, team management, and client communication features.
+
+The application uses a monorepo structure with a React frontend and Express backend, connected to a PostgreSQL database via Drizzle ORM.
+
+## User Preferences
+
+Preferred communication style: Simple, everyday language.
+
+## System Architecture
+
+### Frontend Architecture
+- **Framework**: React 18 with TypeScript
+- **Routing**: Wouter (lightweight React router)
+- **State Management**: TanStack React Query for server state
+- **UI Components**: shadcn/ui component library built on Radix UI primitives
+- **Styling**: Tailwind CSS with custom dark theme (slate-based colors, blue primary)
+- **Build Tool**: Vite with React plugin
+
+### Backend Architecture
+- **Framework**: Express 5 on Node.js
+- **Authentication**: Passport.js with local strategy, session-based auth using express-session
+- **Password Hashing**: scrypt with timing-safe comparison
+- **API Design**: RESTful endpoints defined in shared routes file with Zod validation schemas
+
+### Data Storage
+- **Database**: PostgreSQL
+- **ORM**: Drizzle ORM with drizzle-zod for schema validation
+- **Schema Location**: `shared/schema.ts` contains all table definitions
+- **Key Tables**: users, orders, order_services, chats, messages, notifications
+
+### Role-Based Access Control
+Three user roles with distinct permissions:
+- **Admin**: Full access including finance, user management, all orders/chats
+- **Support**: Can create/edit orders, assign designers, see payment status (no amounts)
+- **Designer**: Can only view assigned orders, update delivery status, no finance visibility
+
+### Project Structure
+```
+├── client/           # React frontend
+│   └── src/
+│       ├── components/   # UI components including shadcn/ui
+│       ├── hooks/        # Custom hooks for auth, orders, users
+│       ├── pages/        # Page components
+│       └── lib/          # Utilities and query client
+├── server/           # Express backend
+│   ├── routes.ts     # API route definitions
+│   ├── storage.ts    # Database operations
+│   └── db.ts         # Database connection
+├── shared/           # Shared code between client/server
+│   ├── schema.ts     # Drizzle database schema
+│   └── routes.ts     # API contract definitions
+└── migrations/       # Database migrations
+```
+
+### Build System
+- Development: tsx for running TypeScript directly
+- Production: Custom build script using esbuild (server) and Vite (client)
+- Output: `dist/` directory with bundled server and static client files
+
+## External Dependencies
+
+### Database
+- **PostgreSQL**: Primary database, connection via `DATABASE_URL` environment variable
+- **connect-pg-simple**: Session storage in PostgreSQL
+
+### UI Libraries
+- **Radix UI**: Full suite of accessible primitives (dialog, select, tabs, etc.)
+- **Recharts**: Dashboard analytics charts (admin view)
+- **Embla Carousel**: Carousel component
+- **date-fns**: Date formatting and manipulation
+
+### Development Tools
+- **Drizzle Kit**: Database migrations via `db:push` command
+- **Replit Plugins**: Runtime error overlay, cartographer, dev banner for Replit environment
+
+### Currency
+All monetary values displayed in PKR (₨), stored as integers (cents) in the database.

@@ -157,12 +157,43 @@ export async function registerRoutes(
   app.post(api.orders.create.path, requireRole(["admin", "support"]), async (req, res) => {
     try {
       const { services, ...orderData } = req.body;
+      
+      // Validate services array
+      if (!services || !Array.isArray(services) || services.length === 0) {
+        return res.status(400).json({ message: "At least one service is required" });
+      }
+
+      // Validate each service
+      const serviceSchema = z.object({
+        serviceType: z.string().min(1, "Service type is required"),
+        quantity: z.number().int().min(1, "Quantity must be at least 1"),
+        instructions: z.string().nullable().optional(),
+      });
+      
+      for (const service of services) {
+        serviceSchema.parse(service);
+      }
+
+      // Validate order data
+      const orderSchema = z.object({
+        clientName: z.string().min(1, "Client name is required"),
+        clientPhone: z.string().min(1, "Phone number is required"),
+        clientEmail: z.string().email().optional().nullable(),
+        deadline: z.string().datetime(),
+        assignedToId: z.number().int().positive().optional().nullable(),
+        paymentStatus: z.enum(["pending", "paid", "partial"]).optional(),
+        notes: z.string().optional().nullable(),
+      });
+      
+      orderSchema.parse(orderData);
+      
       const orderNumber = await storage.generateOrderNumber();
       const user = req.user as User;
       
       const order = await storage.createOrder({
         ...orderData,
         orderNumber,
+        deadline: new Date(orderData.deadline), // Convert string to Date
         createdById: user.id,
       }, services);
       

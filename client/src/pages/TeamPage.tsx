@@ -93,7 +93,7 @@ export default function TeamPage() {
         
         <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
           <DialogTrigger asChild>
-            <Button className="bg-blue-600 hover:bg-blue-700" data-testid="button-create-user">
+            <Button className="bg-primary" data-testid="button-create-user">
               <Plus className="w-4 h-4 mr-2" />
               Create User
             </Button>
@@ -297,7 +297,7 @@ function CreateUserForm({ onSuccess }: { onSuccess: () => void }) {
         </Select>
       </div>
       <DialogFooter className="pt-4">
-        <Button type="submit" className="bg-blue-600 hover:bg-blue-700" disabled={createMutation.isPending} data-testid="button-submit-user">
+        <Button type="submit" className="bg-primary" disabled={createMutation.isPending} data-testid="button-submit-user">
           {createMutation.isPending ? "Creating..." : "Create User"}
         </Button>
       </DialogFooter>
@@ -364,7 +364,7 @@ function EditUserForm({ user, onSuccess }: { user: User; onSuccess: () => void }
         </Select>
       </div>
       <DialogFooter className="pt-4">
-        <Button type="submit" className="bg-blue-600 hover:bg-blue-700" disabled={updateMutation.isPending} data-testid="button-save-user">
+        <Button type="submit" className="bg-primary" disabled={updateMutation.isPending} data-testid="button-save-user">
           {updateMutation.isPending ? "Saving..." : "Save Changes"}
         </Button>
       </DialogFooter>
@@ -415,7 +415,7 @@ function ResetPasswordForm({ user, onSuccess }: { user: User; onSuccess: () => v
         />
       </div>
       <DialogFooter className="pt-4">
-        <Button type="submit" className="bg-blue-600 hover:bg-blue-700" disabled={resetMutation.isPending} data-testid="button-reset-password">
+        <Button type="submit" className="bg-primary" disabled={resetMutation.isPending} data-testid="button-reset-password">
           {resetMutation.isPending ? "Resetting..." : "Reset Password"}
         </Button>
       </DialogFooter>

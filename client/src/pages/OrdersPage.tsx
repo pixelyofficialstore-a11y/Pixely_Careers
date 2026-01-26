@@ -149,7 +149,7 @@ export default function OrdersPage() {
           {canCreateOrder && (
             <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
               <DialogTrigger asChild>
-                <Button className="bg-blue-600 hover:bg-blue-700" data-testid="button-create-order">
+                <Button className="bg-primary" data-testid="button-create-order">
                   <Plus className="w-4 h-4 mr-2" />
                   Create Order
                 </Button>
@@ -421,20 +421,34 @@ function CreateOrderForm({ designers, onSuccess }: { designers: User[]; onSucces
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!clientName || !clientPhone || !deadline || services.some(s => !s.serviceType)) {
-      toast({ title: "Error", description: "Please fill all required fields", variant: "destructive" });
+    const missingFields: string[] = [];
+    if (!clientName.trim()) missingFields.push("Client Name");
+    if (!clientPhone.trim()) missingFields.push("WhatsApp Number");
+    if (!deadline) missingFields.push("Expected Delivery");
+    if (services.every(s => !s.serviceType)) missingFields.push("At least one service");
+    
+    if (missingFields.length > 0) {
+      toast({ 
+        title: "Missing Fields", 
+        description: `Please fill: ${missingFields.join(", ")}`, 
+        variant: "destructive" 
+      });
       return;
     }
 
     createMutation.mutate({
-      clientName,
-      clientPhone,
-      clientEmail: clientEmail || null,
+      clientName: clientName.trim(),
+      clientPhone: clientPhone.trim(),
+      clientEmail: clientEmail.trim() || null,
       deadline: new Date(deadline).toISOString(),
       assignedToId: assignedToId ? parseInt(assignedToId) : null,
       paymentStatus,
-      notes: notes || null,
-      services: services.filter(s => s.serviceType),
+      notes: notes.trim() || null,
+      services: services.filter(s => s.serviceType).map(s => ({
+        serviceType: s.serviceType,
+        quantity: s.quantity || 1,
+        instructions: s.instructions || null,
+      })),
     });
   };
 
@@ -587,7 +601,7 @@ function CreateOrderForm({ designers, onSuccess }: { designers: User[]; onSucces
       </div>
 
       <div className="flex justify-end gap-3 pt-4 border-t border-slate-800">
-        <Button type="submit" className="bg-blue-600 hover:bg-blue-700" disabled={createMutation.isPending} data-testid="button-submit-order">
+        <Button type="submit" className="bg-primary" disabled={createMutation.isPending} data-testid="button-submit-order">
           {createMutation.isPending ? "Creating..." : "Create Order"}
         </Button>
       </div>
