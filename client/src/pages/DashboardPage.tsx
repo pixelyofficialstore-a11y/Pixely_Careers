@@ -97,8 +97,8 @@ export default function DashboardPage() {
           color="orange"
         />
         <StatCard 
-          title="Total Revenue" 
-          value={`$${((stats?.finance?.totalRevenue || 0) / 100).toLocaleString()}`} 
+          title="Total Collected" 
+          value={`₨${((stats?.finance?.totalRevenue || 0) / 100).toLocaleString()}`} 
           icon={DollarSign}
           color="green"
         />
@@ -107,15 +107,14 @@ export default function DashboardPage() {
       {isAdmin && stats?.finance && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 glass-panel p-6 rounded-2xl">
-            <h3 className="text-lg font-bold font-display text-white mb-6">Revenue Overview</h3>
+            <h3 className="text-lg font-bold font-display text-white mb-6">Revenue Performance</h3>
             <div className="h-64 flex items-center justify-center text-slate-500 border border-dashed border-slate-800 rounded-xl bg-slate-950/30">
-              {/* Placeholder for Recharts - fully implemented in StatsPage */}
-              <p>Revenue Chart Area</p>
+              <p>Agency Growth Metrics</p>
             </div>
           </div>
           
           <div className="glass-panel p-6 rounded-2xl">
-            <h3 className="text-lg font-bold font-display text-white mb-6">Financial Summary</h3>
+            <h3 className="text-lg font-bold font-display text-white mb-6">Profit & Collections</h3>
             <div className="space-y-6">
               <div className="flex items-center justify-between p-4 bg-slate-950/50 rounded-xl border border-slate-800">
                 <div className="flex items-center gap-3">
@@ -123,8 +122,8 @@ export default function DashboardPage() {
                     <DollarSign className="w-5 h-5" />
                   </div>
                   <div>
-                    <p className="text-xs text-slate-400">Total Revenue</p>
-                    <p className="font-bold text-white">${(stats.finance.totalRevenue || 0) / 100}</p>
+                    <p className="text-xs text-slate-400">Net Revenue</p>
+                    <p className="font-bold text-white">₨{((stats.finance.totalRevenue || 0) / 100).toLocaleString()}</p>
                   </div>
                 </div>
               </div>
@@ -134,8 +133,19 @@ export default function DashboardPage() {
                     <DollarSign className="w-5 h-5" />
                   </div>
                   <div>
-                    <p className="text-xs text-slate-400">Monthly</p>
-                    <p className="font-bold text-white">${(stats.finance.monthlyRevenue || 0) / 100}</p>
+                    <p className="text-xs text-slate-400">Current Month</p>
+                    <p className="font-bold text-white">₨{((stats.finance.monthlyRevenue || 0) / 100).toLocaleString()}</p>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center justify-between p-4 bg-slate-950/50 rounded-xl border border-slate-800">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-orange-500/10 rounded-lg text-orange-500">
+                    <DollarSign className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-400">Outstanding Balance</p>
+                    <p className="font-bold text-white">₨{((stats.finance.pendingPayments || 0) / 100).toLocaleString()}</p>
                   </div>
                 </div>
               </div>
