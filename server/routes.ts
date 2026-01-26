@@ -1,16 +1,357 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { api, errorSchemas } from "@shared/routes";
+import { z } from "zod";
+import session from "express-session";
+import passport from "passport";
+import { Strategy as LocalStrategy } from "passport-local";
+import { type User, userRoles } from "@shared/schema";
+import { db } from "./db";
+import { scrypt, randomBytes, timingSafeEqual } from "crypto";
+import { promisify } from "util";
+
+const scryptAsync = promisify(scrypt);
+
+async function hashPassword(password: string) {
+  const salt = randomBytes(16).toString("hex");
+  const buf = (await scryptAsync(password, salt, 64)) as Buffer;
+  return `${buf.toString("hex")}.${salt}`;
+}
+
+async function comparePasswords(supplied: string, stored: string) {
+  const [hashed, salt] = stored.split(".");
+  const hashedBuf = Buffer.from(hashed, "hex");
+  const suppliedBuf = (await scryptAsync(supplied, salt, 64)) as Buffer;
+  return timingSafeEqual(hashedBuf, suppliedBuf);
+}
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  // put application routes here
-  // prefix all routes with /api
+  // === AUTH SETUP ===
+  app.use(
+    session({
+      secret: process.env.SESSION_SECRET || "pixely_secret_key",
+      resave: false,
+      saveUninitialized: false,
+      cookie: { secure: process.env.NODE_ENV === "production" },
+    })
+  );
 
-  // use storage to perform CRUD operations on the storage interface
-  // e.g. storage.insertUser(user) or storage.getUserByUsername(username)
+  app.use(passport.initialize());
+  app.use(passport.session());
+
+  passport.use(
+    new LocalStrategy(async (username, password, done) => {
+      try {
+        const user = await storage.getUserByUsername(username);
+        if (!user || !(await comparePasswords(password, user.password))) {
+          return done(null, false);
+        }
+        return done(null, user);
+      } catch (err) {
+        return done(err);
+      }
+    })
+  );
+
+  passport.serializeUser((user, done) => done(null, (user as User).id));
+  passport.deserializeUser(async (id, done) => {
+    try {
+      const user = await storage.getUser(id as number);
+      done(null, user);
+    } catch (err) {
+      done(err);
+    }
+  });
+
+  // === AUTH ROUTES ===
+  app.post(api.auth.login.path, passport.authenticate("local"), (req, res) => {
+    res.json(req.user);
+  });
+
+  app.post(api.auth.logout.path, (req, res, next) => {
+    req.logout((err) => {
+      if (err) return next(err);
+      res.json({ message: "Logged out" });
+    });
+  });
+
+  app.get(api.auth.me.path, (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    res.json(req.user);
+  });
+
+  // Middleware to check auth
+  const requireAuth = (req: any, res: any, next: any) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    next();
+  };
+
+  // Middleware to check role
+  const requireRole = (roles: string[]) => (req: any, res: any, next: any) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    if (!roles.includes((req.user as User).role)) return res.sendStatus(403);
+    next();
+  };
+
+  // === APP ROUTES ===
+
+  // Users
+  app.get(api.users.list.path, requireAuth, async (req, res) => {
+    const users = await storage.getUsers();
+    res.json(users);
+  });
+
+  app.post(api.users.create.path, requireRole(["admin"]), async (req, res) => {
+    try {
+      const input = api.users.create.input.parse(req.body);
+      const hashedPassword = await hashPassword(input.password);
+      const user = await storage.createUser({ ...input, password: hashedPassword });
+      res.status(201).json(user);
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.errors[0].message });
+      }
+      throw err;
+    }
+  });
+
+  // Orders
+  app.get(api.orders.list.path, requireAuth, async (req, res) => {
+    const user = req.user as User;
+    const orders = await storage.getOrders(user.role, user.id);
+    
+    // Enrich with assignee info (for MVP simply getting users again or joining in DB)
+    // Here we'll just attach user data manually or rely on frontend to fetch users
+    // For MVP efficiency, we'll fetch users map
+    const allUsers = await storage.getUsers();
+    const userMap = new Map(allUsers.map(u => [u.id, u]));
+    
+    const enrichedOrders = orders.map(o => ({
+      ...o,
+      assignee: o.assignedToId ? userMap.get(o.assignedToId) : null,
+      price: user.role === 'admin' ? o.price : undefined // Hide price for non-admins
+    }));
+
+    res.json(enrichedOrders);
+  });
+
+  app.post(api.orders.create.path, requireRole(["admin", "support"]), async (req, res) => {
+    const input = api.orders.create.input.parse(req.body);
+    const order = await storage.createOrder(input);
+    
+    // Notify designer if assigned
+    if (order.assignedToId) {
+      await storage.createNotification(order.assignedToId, "assignment", `New order assigned: ${order.orderNumber}`, order.id, "order");
+    }
+
+    res.status(201).json(order);
+  });
+
+  app.get(api.orders.get.path, requireAuth, async (req, res) => {
+    const order = await storage.getOrder(Number(req.params.id));
+    if (!order) return res.sendStatus(404);
+    
+    const user = req.user as User;
+    if (user.role === 'designer' && order.assignedToId !== user.id) {
+      return res.sendStatus(403);
+    }
+
+    // Hide price for non-admins
+    if (user.role !== 'admin') {
+      (order as any).price = undefined;
+      (order as any).amountPaid = undefined;
+    }
+
+    res.json(order);
+  });
+
+  app.patch(api.orders.update.path, requireAuth, async (req, res) => {
+    const orderId = Number(req.params.id);
+    const updates = api.orders.update.input.parse(req.body);
+    const user = req.user as User;
+    
+    const existingOrder = await storage.getOrder(orderId);
+    if (!existingOrder) return res.sendStatus(404);
+
+    // Permission checks
+    if (user.role === 'designer') {
+      if (existingOrder.assignedToId !== user.id) return res.sendStatus(403);
+      // Designers can only update status and attachments
+      const allowedUpdates = ['status', 'attachments'];
+      const keys = Object.keys(updates);
+      if (keys.some(k => !allowedUpdates.includes(k))) return res.sendStatus(403);
+    }
+
+    const updatedOrder = await storage.updateOrder(orderId, updates);
+    
+    // Notifications
+    if (updates.status === 'delivered') {
+      // Notify support/admin
+      // (Implementation simplified: assuming checking dashboard is enough or broadcasting later)
+    }
+
+    res.json(updatedOrder);
+  });
+
+  // Chats
+  app.get(api.chats.list.path, requireAuth, async (req, res) => {
+    const user = req.user as User;
+    const chats = await storage.getChats(user.role, user.id);
+    
+    const allUsers = await storage.getUsers();
+    const userMap = new Map(allUsers.map(u => [u.id, u]));
+    
+    const enrichedChats = chats.map(c => ({
+      ...c,
+      assignee: c.assignedToId ? userMap.get(c.assignedToId) : null
+    }));
+
+    res.json(enrichedChats);
+  });
+
+  app.get(api.chats.get.path, requireAuth, async (req, res) => {
+    const chat = await storage.getChat(Number(req.params.id));
+    if (!chat) return res.sendStatus(404);
+    
+    const user = req.user as User;
+    if (user.role === 'designer' && chat.assignedToId !== user.id) {
+      return res.sendStatus(403);
+    }
+
+    res.json(chat);
+  });
+
+  app.post(api.chats.sendMessage.path, requireAuth, async (req, res) => {
+    const chatId = Number(req.params.id);
+    const { content } = req.body;
+    const user = req.user as User;
+    
+    const message = await storage.createMessage(chatId, user.id, "user", content);
+    res.status(201).json(message);
+  });
+
+  // Notifications
+  app.get(api.notifications.list.path, requireAuth, async (req, res) => {
+    const notifs = await storage.getNotifications((req.user as User).id);
+    res.json(notifs);
+  });
+
+  app.patch(api.notifications.markRead.path, requireAuth, async (req, res) => {
+    const notif = await storage.markNotificationRead(Number(req.params.id));
+    res.json(notif);
+  });
+
+  // Stats
+  app.get(api.stats.dashboard.path, requireAuth, async (req, res) => {
+    const stats = await storage.getStats();
+    const user = req.user as User;
+
+    if (user.role !== 'admin') {
+      delete stats.finance;
+    }
+    
+    res.json(stats);
+  });
+
+  // === SEED DATA ===
+  await seedDatabase();
 
   return httpServer;
+}
+
+async function seedDatabase() {
+  const existingUsers = await storage.getUsers();
+  if (existingUsers.length > 0) return;
+
+  console.log("Seeding database...");
+
+  // Create Users
+  const adminPass = await hashPassword("admin123");
+  const admin = await storage.createUser({
+    username: "admin",
+    password: adminPass,
+    role: "admin",
+    name: "Admin User",
+    title: "Agency Owner",
+    avatar: "https://github.com/shadcn.png"
+  });
+
+  const supportPass = await hashPassword("support123");
+  const support = await storage.createUser({
+    username: "support",
+    password: supportPass,
+    role: "support",
+    name: "Support Agent",
+    title: "Customer Success",
+    avatar: "https://github.com/shadcn.png"
+  });
+
+  const designerPass = await hashPassword("designer123");
+  const designer = await storage.createUser({
+    username: "designer",
+    password: designerPass,
+    role: "designer",
+    name: "Alex Designer",
+    title: "Senior Graphic Designer",
+    avatar: "https://github.com/shadcn.png"
+  });
+
+  // Create Orders
+  await storage.createOrder({
+    orderNumber: "PX-006-105",
+    clientName: "Banee Pasth",
+    serviceType: "CV Design",
+    description: "Professional CV for Tech industry",
+    status: "working",
+    priority: "normal",
+    assignedToId: designer.id,
+    deadline: new Date(Date.now() + 86400000), // Tomorrow
+    price: 15000, // $150.00
+    amountPaid: 10000,
+  });
+
+  await storage.createOrder({
+    orderNumber: "PX-006-106",
+    clientName: "John Doe",
+    serviceType: "LinkedIn Optimization",
+    description: "Full profile revamp",
+    status: "pending",
+    priority: "high",
+    deadline: new Date(Date.now() + 172800000), // 2 days
+    price: 20000,
+    amountPaid: 0,
+  });
+
+  // Create Chats
+  const chat1 = await storage.createChat({
+    clientName: "Banee Pasth",
+    clientPhone: "+1234567890",
+    platform: "whatsapp",
+    status: "changes",
+    assignedToId: designer.id,
+    lastMessage: "Can you update the header?",
+    unreadCount: 2,
+    tags: ["Changes", "Urgent"]
+  });
+
+  await storage.createMessage(chat1.id, null, "client", "Hi, I need some changes.");
+  await storage.createMessage(chat1.id, null, "client", "Can you update the header?");
+  
+  const chat2 = await storage.createChat({
+    clientName: "New Lead",
+    clientPhone: "+987654321",
+    platform: "whatsapp",
+    status: "new",
+    lastMessage: "I'm interested in your services.",
+    unreadCount: 1,
+    tags: ["New"]
+  });
+  
+  await storage.createMessage(chat2.id, null, "client", "I'm interested in your services.");
+
+  console.log("Database seeded!");
 }
