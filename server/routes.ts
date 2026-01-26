@@ -119,36 +119,65 @@ export async function registerRoutes(
     }
   });
 
+  app.patch(api.users.update.path, requireRole(["admin"]), async (req, res) => {
+    try {
+      const userId = Number(req.params.id);
+      const updates = { ...req.body };
+      
+      // Hash password if provided
+      if (updates.password) {
+        updates.password = await hashPassword(updates.password);
+      }
+      
+      const updatedUser = await storage.updateUser(userId, updates);
+      res.json(updatedUser);
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.errors[0].message });
+      }
+      throw err;
+    }
+  });
+
   // Orders
   app.get(api.orders.list.path, requireAuth, async (req, res) => {
     const user = req.user as User;
     const orders = await storage.getOrders(user.role, user.id);
     
-    // Enrich with assignee info (for MVP simply getting users again or joining in DB)
-    // Here we'll just attach user data manually or rely on frontend to fetch users
-    // For MVP efficiency, we'll fetch users map
-    const allUsers = await storage.getUsers();
-    const userMap = new Map(allUsers.map(u => [u.id, u]));
-    
-    const enrichedOrders = orders.map(o => ({
+    // Hide finance for non-admins
+    const sanitizedOrders = orders.map(o => ({
       ...o,
-      assignee: o.assignedToId ? userMap.get(o.assignedToId) : null,
-      price: user.role === 'admin' ? o.price : undefined // Hide price for non-admins
+      totalPrice: user.role === 'admin' ? o.totalPrice : undefined,
+      amountPaid: user.role === 'admin' ? o.amountPaid : undefined,
     }));
 
-    res.json(enrichedOrders);
+    res.json(sanitizedOrders);
   });
 
   app.post(api.orders.create.path, requireRole(["admin", "support"]), async (req, res) => {
-    const input = api.orders.create.input.parse(req.body);
-    const order = await storage.createOrder(input);
-    
-    // Notify designer if assigned
-    if (order.assignedToId) {
-      await storage.createNotification(order.assignedToId, "assignment", `New order assigned: ${order.orderNumber}`, order.id, "order");
-    }
+    try {
+      const { services, ...orderData } = req.body;
+      const orderNumber = await storage.generateOrderNumber();
+      const user = req.user as User;
+      
+      const order = await storage.createOrder({
+        ...orderData,
+        orderNumber,
+        createdById: user.id,
+      }, services);
+      
+      // Notify designer if assigned
+      if (order.assignedToId) {
+        await storage.createNotification(order.assignedToId, "assignment", `New order assigned: ${order.orderNumber}`, order.id, "order");
+      }
 
-    res.status(201).json(order);
+      res.status(201).json(order);
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.errors[0].message });
+      }
+      throw err;
+    }
   });
 
   app.get(api.orders.get.path, requireAuth, async (req, res) => {
@@ -160,13 +189,14 @@ export async function registerRoutes(
       return res.sendStatus(403);
     }
 
-    // Hide price for non-admins
-    if (user.role !== 'admin') {
-      (order as any).price = undefined;
-      (order as any).amountPaid = undefined;
-    }
+    // Hide finance for non-admins
+    const sanitized = {
+      ...order,
+      totalPrice: user.role === 'admin' ? order.totalPrice : undefined,
+      amountPaid: user.role === 'admin' ? order.amountPaid : undefined,
+    };
 
-    res.json(order);
+    res.json(sanitized);
   });
 
   app.patch(api.orders.update.path, requireAuth, async (req, res) => {

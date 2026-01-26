@@ -1,6 +1,7 @@
 import { 
-  users, orders, chats, messages, notifications,
-  type User, type InsertUser, type Order, type InsertOrder, type Chat, type InsertChat, type Message, type Notification
+  users, orders, chats, messages, notifications, orderServices,
+  type User, type InsertUser, type Order, type InsertOrder, type Chat, type InsertChat, type Message, type Notification,
+  type OrderService, type InsertOrderService, type OrderWithServices
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, sql } from "drizzle-orm";
@@ -14,10 +15,13 @@ export interface IStorage {
   getUsers(): Promise<User[]>;
 
   // Orders
-  getOrder(id: number): Promise<Order | undefined>;
-  getOrders(role: string, userId: number): Promise<Order[]>;
-  createOrder(order: InsertOrder): Promise<Order>;
+  getOrder(id: number): Promise<OrderWithServices | undefined>;
+  getOrders(role: string, userId: number): Promise<OrderWithServices[]>;
+  createOrder(order: InsertOrder, services?: InsertOrderService[]): Promise<Order>;
   updateOrder(id: number, updates: Partial<InsertOrder>): Promise<Order>;
+  getOrderServices(orderId: number): Promise<OrderService[]>;
+  createOrderService(service: InsertOrderService): Promise<OrderService>;
+  generateOrderNumber(): Promise<string>;
 
   // Chats
   getChat(id: number): Promise<(Chat & { messages: Message[] }) | undefined>;
@@ -62,27 +66,61 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Orders
-  async getOrder(id: number): Promise<Order | undefined> {
+  async getOrder(id: number): Promise<OrderWithServices | undefined> {
     const [order] = await db.select().from(orders).where(eq(orders.id, id));
-    return order;
+    if (!order) return undefined;
+    const services = await this.getOrderServices(id);
+    const allUsers = await this.getUsers();
+    const assignee = order.assignedToId ? allUsers.find(u => u.id === order.assignedToId) : null;
+    return { ...order, services, assignee };
   }
 
-  async getOrders(role: string, userId: number): Promise<Order[]> {
+  async getOrders(role: string, userId: number): Promise<OrderWithServices[]> {
+    let orderList: Order[];
     if (role === "admin" || role === "support") {
-      return await db.select().from(orders).orderBy(desc(orders.createdAt));
+      orderList = await db.select().from(orders).orderBy(desc(orders.createdAt));
     } else {
-      return await db.select().from(orders).where(eq(orders.assignedToId, userId)).orderBy(desc(orders.createdAt));
+      orderList = await db.select().from(orders).where(eq(orders.assignedToId, userId)).orderBy(desc(orders.createdAt));
     }
+    const allServices = await db.select().from(orderServices);
+    const allUsers = await this.getUsers();
+    return orderList.map(order => ({
+      ...order,
+      services: allServices.filter(s => s.orderId === order.id),
+      assignee: order.assignedToId ? allUsers.find(u => u.id === order.assignedToId) : null
+    }));
   }
 
-  async createOrder(order: InsertOrder): Promise<Order> {
+  async createOrder(order: InsertOrder, services?: InsertOrderService[]): Promise<Order> {
     const [newOrder] = await db.insert(orders).values(order).returning();
+    if (services && services.length > 0) {
+      for (const svc of services) {
+        await this.createOrderService({ ...svc, orderId: newOrder.id });
+      }
+    }
     return newOrder;
   }
 
   async updateOrder(id: number, updates: Partial<InsertOrder>): Promise<Order> {
     const [updatedOrder] = await db.update(orders).set(updates).where(eq(orders.id, id)).returning();
     return updatedOrder;
+  }
+
+  async getOrderServices(orderId: number): Promise<OrderService[]> {
+    return await db.select().from(orderServices).where(eq(orderServices.orderId, orderId));
+  }
+
+  async createOrderService(service: InsertOrderService): Promise<OrderService> {
+    const [newService] = await db.insert(orderServices).values(service).returning();
+    return newService;
+  }
+
+  async generateOrderNumber(): Promise<string> {
+    const year = new Date().getFullYear().toString().slice(-2);
+    const month = (new Date().getMonth() + 1).toString().padStart(2, '0');
+    const allOrders = await db.select().from(orders);
+    const count = allOrders.length + 1;
+    return `PX-${year}${month}-${count.toString().padStart(3, '0')}`;
   }
 
   // Chats
@@ -164,8 +202,18 @@ export class DatabaseStorage implements IStorage {
     const allOrders = await db.select().from(orders);
     const allChats = await db.select().from(chats);
     
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayOrders = allOrders.filter(o => new Date(o.createdAt!) >= today);
+    const thisMonth = new Date();
+    thisMonth.setDate(1);
+    thisMonth.setHours(0, 0, 0, 0);
+    const monthlyOrders = allOrders.filter(o => new Date(o.createdAt!) >= thisMonth);
+    
     const orderStats = {
       total: allOrders.length,
+      today: todayOrders.length,
+      monthly: monthlyOrders.length,
       pending: allOrders.filter(o => o.status === 'pending').length,
       working: allOrders.filter(o => o.status === 'working').length,
       ready: allOrders.filter(o => o.status === 'ready').length,
@@ -173,7 +221,7 @@ export class DatabaseStorage implements IStorage {
     };
 
     const totalRevenue = allOrders.reduce((acc, curr) => acc + (curr.amountPaid || 0), 0);
-    const pendingPayments = allOrders.reduce((acc, curr) => acc + (curr.price - (curr.amountPaid || 0)), 0);
+    const pendingPayments = allOrders.reduce((acc, curr) => acc + ((curr.totalPrice || 0) - (curr.amountPaid || 0)), 0);
 
     const chatStats = {
       new: allChats.filter(c => c.status === 'new').length,
@@ -184,7 +232,7 @@ export class DatabaseStorage implements IStorage {
       orders: orderStats,
       finance: {
         totalRevenue,
-        monthlyRevenue: totalRevenue,
+        monthlyRevenue: monthlyOrders.reduce((acc, curr) => acc + (curr.amountPaid || 0), 0),
         pendingPayments,
       },
       chats: chatStats

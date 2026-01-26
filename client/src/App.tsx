@@ -11,6 +11,7 @@ import { Layout } from "@/components/Layout";
 import { Loader2 } from "lucide-react";
 
 import OrdersPage from "@/pages/OrdersPage";
+import TeamPage from "@/pages/TeamPage";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -60,7 +61,7 @@ function Router() {
       <Route path="/users">
         <ProtectedRoute>
           <Layout>
-            <div className="p-8"><h1 className="text-2xl text-white">Users Page (Coming Soon)</h1></div>
+            <TeamPage />
           </Layout>
         </ProtectedRoute>
       </Route>

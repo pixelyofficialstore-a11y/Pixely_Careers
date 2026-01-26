@@ -27,18 +27,30 @@ export const users = pgTable("users", {
 // Orders
 export const orders = pgTable("orders", {
   id: serial("id").primaryKey(),
-  orderNumber: text("order_number").notNull().unique(), // e.g. PX-006-105
+  orderNumber: text("order_number").notNull().unique(), // e.g. PX-260-001
   clientName: text("client_name").notNull(),
-  serviceType: text("service_type").notNull(), // e.g. "CV", "Cover Letter"
-  description: text("description"),
+  clientPhone: text("client_phone"),
+  clientEmail: text("client_email"),
   status: text("status", { enum: orderStatuses }).notNull().default("pending"),
   priority: text("priority", { enum: priorities }).notNull().default("normal"),
   assignedToId: integer("assigned_to_id").references(() => users.id), // Designer ID
   deadline: timestamp("deadline").notNull(),
-  price: integer("price").notNull().default(0), // Stored in cents, visible only to Admin
+  paymentStatus: text("payment_status").default("pending"), // "paid" or "pending"
+  totalPrice: integer("total_price").notNull().default(0), // In cents, Admin only
   amountPaid: integer("amount_paid").default(0),
-  attachments: jsonb("attachments").$type<string[]>(), // Array of file URLs
+  notes: text("notes"),
+  createdById: integer("created_by_id").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Order Services (line items)
+export const orderServices = pgTable("order_services", {
+  id: serial("id").primaryKey(),
+  orderId: integer("order_id").notNull().references(() => orders.id),
+  serviceType: text("service_type").notNull(), // ATS CV, Professional CV, LinkedIn, etc.
+  quantity: integer("quantity").notNull().default(1),
+  instructions: text("instructions"),
+  status: text("status", { enum: orderStatuses }).notNull().default("pending"),
 });
 
 // Chats (Mock WhatsApp)
@@ -84,10 +96,22 @@ export const usersRelations = relations(users, ({ many }) => ({
   notifications: many(notifications),
 }));
 
-export const ordersRelations = relations(orders, ({ one }) => ({
+export const ordersRelations = relations(orders, ({ one, many }) => ({
   assignee: one(users, {
     fields: [orders.assignedToId],
     references: [users.id],
+  }),
+  createdBy: one(users, {
+    fields: [orders.createdById],
+    references: [users.id],
+  }),
+  services: many(orderServices),
+}));
+
+export const orderServicesRelations = relations(orderServices, ({ one }) => ({
+  order: one(orders, {
+    fields: [orderServices.orderId],
+    references: [orders.id],
   }),
 }));
 
@@ -113,6 +137,7 @@ export const messagesRelations = relations(messages, ({ one }) => ({
 // === SCHEMAS ===
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertOrderSchema = createInsertSchema(orders).omit({ id: true, createdAt: true, orderNumber: true });
+export const insertOrderServiceSchema = createInsertSchema(orderServices).omit({ id: true });
 export const insertChatSchema = createInsertSchema(chats).omit({ id: true, lastMessageAt: true, unreadCount: true });
 export const insertMessageSchema = createInsertSchema(messages).omit({ id: true, createdAt: true });
 
@@ -121,7 +146,15 @@ export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type Order = typeof orders.$inferSelect;
 export type InsertOrder = z.infer<typeof insertOrderSchema>;
+export type OrderService = typeof orderServices.$inferSelect;
+export type InsertOrderService = z.infer<typeof insertOrderServiceSchema>;
 export type Chat = typeof chats.$inferSelect;
 export type Message = typeof messages.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
 export type UserRole = (typeof userRoles)[number];
+
+// Order with services for API responses
+export type OrderWithServices = Order & {
+  services: OrderService[];
+  assignee?: User | null;
+};
