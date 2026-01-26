@@ -35,7 +35,7 @@ export function Sidebar() {
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-sky-400 flex items-center justify-center">
             <span className="text-white font-bold font-display text-lg">P</span>
           </div>
-          <h1 className="text-xl font-bold font-display tracking-tight text-white">PixelCRM</h1>
+          <h1 className="text-xl font-bold font-display tracking-tight text-white">Pixely_CRM</h1>
         </div>
 
         <div className="flex flex-col gap-6">
@@ -59,7 +59,6 @@ export function Sidebar() {
           </div>
         </div>
       </div>
-
       <div className="mt-auto p-6 border-t border-slate-800">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700 text-slate-300 font-medium">
