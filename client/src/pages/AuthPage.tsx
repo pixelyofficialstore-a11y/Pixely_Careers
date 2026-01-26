@@ -88,10 +88,6 @@ export default function AuthPage() {
                 "Sign In"
               )}
             </button>
-            
-            <div className="text-center text-xs text-slate-500">
-              Demo accounts: admin / support / designer (Password: 123456)
-            </div>
           </form>
         </div>
       </div>
