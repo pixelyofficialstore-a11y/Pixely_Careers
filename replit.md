@@ -79,3 +79,16 @@ Three user roles with distinct permissions:
 
 ### Currency
 All monetary values displayed in PKR (₨), stored as integers (cents) in the database.
+
+## Demo Credentials
+- **Admin**: admin / admin123 (full access)
+- **Support**: support / support123 (orders, no finance)
+- **Designer**: designer / designer123 (assigned orders only)
+
+## Recent Changes (January 2026)
+- Multi-service order system implemented with line items (ATS CV, Professional CV, Europass CV, LinkedIn Profile, Cover Letters)
+- Orders page with Today's/Monthly tabs and role-based visibility
+- Team Management page for Admin-only user creation/editing
+- Dashboard with business-focused financial metrics (Admin only)
+- Dark mode UI with blue primary (#2563EB)
+- Pixely Careers logo integrated
