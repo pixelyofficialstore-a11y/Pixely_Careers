@@ -12,6 +12,7 @@ import { Loader2 } from "lucide-react";
 
 import OrdersPage from "@/pages/OrdersPage";
 import TeamPage from "@/pages/TeamPage";
+import AnalyticsPage from "@/pages/AnalyticsPage";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -68,7 +69,7 @@ function Router() {
       <Route path="/stats">
         <ProtectedRoute>
           <Layout>
-            <div className="p-8"><h1 className="text-2xl text-white">Analytics Page (Coming Soon)</h1></div>
+            <AnalyticsPage />
           </Layout>
         </ProtectedRoute>
       </Route>

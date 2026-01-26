@@ -220,7 +220,9 @@ export default function OrdersPage() {
       <Tabs defaultValue="today" className="w-full">
         <TabsList className="bg-slate-900 border border-slate-800 p-1 mb-6">
           <TabsTrigger value="today" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white" data-testid="tab-today-orders">Today's Orders</TabsTrigger>
-          <TabsTrigger value="monthly" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white" data-testid="tab-monthly-orders">Monthly Orders</TabsTrigger>
+          {(isAdmin || isSupport) && (
+            <TabsTrigger value="monthly" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white" data-testid="tab-monthly-orders">Monthly Orders</TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="today">
@@ -245,8 +247,8 @@ export default function OrdersPage() {
               </TableHeader>
               <TableBody>
                 {todayOrders?.map((order) => {
-                  const isDesigner = user?.role === 'designer';
-                  // Designers can only change: Working→Ready, Ready→Delivered
+                  const isDesignerUser = user?.role === 'designer';
+                  // Designers can change: New→Working→Ready→Delivered (forward only, no cancel)
                   const getStatusOptions = () => {
                     if (isAdmin || isSupport) {
                       return [
@@ -257,7 +259,8 @@ export default function OrdersPage() {
                         { value: "canceled", label: "Canceled" },
                       ];
                     }
-                    // Designer restrictions
+                    // Designer restrictions - forward workflow only
+                    if (order.status === 'new') return [{ value: "new", label: "New" }, { value: "working", label: "Working" }];
                     if (order.status === 'working') return [{ value: "working", label: "Working" }, { value: "ready", label: "Ready" }];
                     if (order.status === 'ready') return [{ value: "ready", label: "Ready" }, { value: "delivered", label: "Delivered" }];
                     return [{ value: order.status, label: order.status.charAt(0).toUpperCase() + order.status.slice(1) }];
@@ -418,11 +421,40 @@ export default function OrdersPage() {
                     <TableCell className="text-white font-medium">{order.clientName}</TableCell>
                     <TableCell className="text-slate-300 text-sm">{getServicesDisplay(order.services)}</TableCell>
                     <TableCell className="text-slate-300">{order.assignee?.name || "Unassigned"}</TableCell>
-                    <TableCell>{getStatusBadge(order.status)}</TableCell>
                     <TableCell>
-                      <Badge variant="outline" className={cn("border-0", order.paymentStatus === 'paid' ? "text-green-500" : "text-yellow-500")}>
-                        {order.paymentStatus === 'paid' ? "Paid" : "Pending"}
-                      </Badge>
+                      <Select 
+                        defaultValue={order.status} 
+                        onValueChange={(val) => updateOrderMutation.mutate({ id: order.id, updates: { status: val } })}
+                      >
+                        <SelectTrigger className="w-32 bg-transparent border-0 h-auto p-0 focus:ring-0 shadow-none hover:bg-white/5 rounded px-2 py-1" data-testid={`select-monthly-status-${order.id}`}>
+                          <SelectValue>{getStatusBadge(order.status)}</SelectValue>
+                        </SelectTrigger>
+                        <SelectContent className="bg-slate-900 border-slate-800">
+                          <SelectItem value="new">New</SelectItem>
+                          <SelectItem value="working">Working</SelectItem>
+                          <SelectItem value="ready">Ready</SelectItem>
+                          <SelectItem value="delivered">Delivered</SelectItem>
+                          <SelectItem value="canceled">Canceled</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                    <TableCell>
+                      <Select 
+                        defaultValue={order.paymentStatus || "pending"} 
+                        onValueChange={(val) => updateOrderMutation.mutate({ id: order.id, updates: { paymentStatus: val } })}
+                      >
+                        <SelectTrigger className="w-24 bg-transparent border-0 h-auto p-0 focus:ring-0 shadow-none hover:bg-white/5 rounded px-2 py-1" data-testid={`select-monthly-payment-${order.id}`}>
+                          <SelectValue>
+                            <Badge variant="outline" className={cn("border-0", order.paymentStatus === 'paid' ? "text-green-500" : "text-yellow-500")}>
+                              {order.paymentStatus === 'paid' ? "Paid" : "Pending"}
+                            </Badge>
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent className="bg-slate-900 border-slate-800">
+                          <SelectItem value="pending">Pending</SelectItem>
+                          <SelectItem value="paid">Paid</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </TableCell>
                     {canSeeFinance && (
                       <TableCell className="text-red-400 font-medium">

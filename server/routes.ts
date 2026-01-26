@@ -255,14 +255,20 @@ export async function registerRoutes(
         const currentStatus = existingOrder.status;
         const newStatus = updates.status;
         
-        // Designers can only: working→ready, ready→delivered
+        // Designers can move through workflow: new→working→ready→delivered
+        // Designers CANNOT cancel orders
+        if (newStatus === 'canceled') {
+          return res.status(403).json({ message: "Designers cannot cancel orders" });
+        }
+        
         const validTransitions: Record<string, string[]> = {
+          'new': ['working'],
           'working': ['ready'],
           'ready': ['delivered'],
         };
         
         if (!validTransitions[currentStatus]?.includes(newStatus)) {
-          return res.status(403).json({ message: "You can only change status: Working→Ready or Ready→Delivered" });
+          return res.status(403).json({ message: "You can only change status forward: New→Working→Ready→Delivered" });
         }
       }
     }
