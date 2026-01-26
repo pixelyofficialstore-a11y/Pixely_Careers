@@ -6,6 +6,8 @@ import { z } from "zod";
 import { Loader2 } from "lucide-react";
 import { useLocation } from "wouter";
 
+import logoUrl from "@assets/rr__1500_x_500_px_-removebg-preview_1769447899946.png";
+
 const loginSchema = z.object({
   username: z.string().min(1, "Username is required"),
   password: z.string().min(1, "Password is required"),
@@ -38,8 +40,8 @@ export default function AuthPage() {
 
       <div className="relative z-10 w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="mx-auto w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-sky-400 flex items-center justify-center shadow-lg shadow-blue-500/20 mb-4">
-            <span className="text-white font-bold font-display text-2xl">P</span>
+          <div className="mx-auto mb-4">
+            <img src={logoUrl} alt="Pixely Careers" className="h-24 w-auto mx-auto" />
           </div>
           <h1 className="text-3xl font-bold font-display tracking-tight text-white mb-2">Welcome Back</h1>
           <p className="text-slate-400">Sign in to access your dashboard</p>
