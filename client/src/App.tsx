@@ -1,15 +1,74 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
+import AuthPage from "@/pages/AuthPage";
+import DashboardPage from "@/pages/DashboardPage";
+import { AuthProvider, useAuth } from "@/hooks/use-auth";
+import { Layout } from "@/components/Layout";
+import { Loader2 } from "lucide-react";
+
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-slate-950">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Redirect to="/auth" />;
+  }
+
+  return <>{children}</>;
+}
 
 function Router() {
   return (
     <Switch>
-      {/* Add pages below */}
-      {/* <Route path="/" component={Home}/> */}
+      <Route path="/auth">
+        {(params) => <AuthPage />}
+      </Route>
+      <Route path="/">
+        <ProtectedRoute>
+          <Layout>
+            <DashboardPage />
+          </Layout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/orders">
+        <ProtectedRoute>
+          <Layout>
+            <div className="p-8"><h1 className="text-2xl text-white">Orders Page (Coming Soon)</h1></div>
+          </Layout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/chats">
+        <ProtectedRoute>
+          <Layout>
+            <div className="p-8"><h1 className="text-2xl text-white">Chats Page (Coming Soon)</h1></div>
+          </Layout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/users">
+        <ProtectedRoute>
+          <Layout>
+            <div className="p-8"><h1 className="text-2xl text-white">Users Page (Coming Soon)</h1></div>
+          </Layout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/stats">
+        <ProtectedRoute>
+          <Layout>
+            <div className="p-8"><h1 className="text-2xl text-white">Analytics Page (Coming Soon)</h1></div>
+          </Layout>
+        </ProtectedRoute>
+      </Route>
       {/* Fallback to 404 */}
       <Route component={NotFound} />
     </Switch>
@@ -19,10 +78,12 @@ function Router() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <Toaster />
-        <Router />
-      </TooltipProvider>
+      <AuthProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Router />
+        </TooltipProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }
