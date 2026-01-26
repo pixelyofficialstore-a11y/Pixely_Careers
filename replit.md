@@ -98,4 +98,8 @@ All monetary values displayed in PKR (₨), stored as integers (cents) in the da
 - Order deletion implemented as soft delete via "Canceled" status (Admin/Support only)
 - Payment status (Pending/Paid) editable by all roles (Admin, Support, Designer)
 - Role-based dashboards: Designer sees only assigned orders with no finance, Support sees operational data, Admin has full access
-- Designer status transitions restricted: can only change Working→Ready or Ready→Delivered
+- Designer status transitions updated: can now change New→Working→Ready→Delivered (forward only, no cancel)
+- Monthly Orders tab restricted to Admin/Support only with editable status dropdowns
+- Analytics page (Admin-only) with two modules:
+  - Designer Performance: tracks completions based on readyDate (Working→Ready transitions)
+  - Marketing Analytics: Campaign → Ad Set → Creative hierarchy breakdown
