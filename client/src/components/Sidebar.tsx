@@ -26,6 +26,7 @@ export function Sidebar() {
     { href: "/chats", label: "Chats", icon: MessageSquare, roles: ["admin", "support", "designer"] },
     { href: "/users", label: "Team", icon: Users, roles: ["admin"] },
     { href: "/stats", label: "Analytics", icon: BarChart3, roles: ["admin"] },
+    { href: "/shortcuts", label: "Shortcuts", icon: Settings, roles: ["admin"] },
   ];
 
   const allowedLinks = links.filter(link => link.roles.includes(user.role));

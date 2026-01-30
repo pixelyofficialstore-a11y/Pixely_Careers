@@ -10,6 +10,9 @@ import { type User, userRoles } from "@shared/schema";
 import { db } from "./db";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
 
 const scryptAsync = promisify(scrypt);
 
@@ -357,6 +360,128 @@ export async function registerRoutes(
     res.json(shortcuts);
   });
 
+  // Shortcuts CRUD (Admin only)
+  app.post("/api/shortcuts", requireRole(["admin"]), async (req, res) => {
+    const { command, content } = req.body;
+    if (!command || !content) return res.status(400).json({ error: "Command and content required" });
+    
+    const shortcut = await storage.createShortcut({ command, content, isActive: true });
+    res.status(201).json(shortcut);
+  });
+
+  app.patch("/api/shortcuts/:id", requireRole(["admin"]), async (req, res) => {
+    const id = Number(req.params.id);
+    const updates = req.body;
+    
+    const shortcut = await storage.updateShortcut(id, updates);
+    if (!shortcut) return res.sendStatus(404);
+    res.json(shortcut);
+  });
+
+  app.delete("/api/shortcuts/:id", requireRole(["admin"]), async (req, res) => {
+    const id = Number(req.params.id);
+    await storage.deleteShortcut(id);
+    res.sendStatus(204);
+  });
+
+  // Configure multer for file uploads
+  const uploadsDir = path.join(process.cwd(), 'uploads');
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+  
+  const upload = multer({
+    storage: multer.diskStorage({
+      destination: uploadsDir,
+      filename: (req, file, cb) => {
+        const uniqueName = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}${path.extname(file.originalname)}`;
+        cb(null, uniqueName);
+      }
+    }),
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+    fileFilter: (req, file, cb) => {
+      const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf', 
+        'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+      if (allowedTypes.includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        cb(new Error('Invalid file type'));
+      }
+    }
+  });
+
+  // Multer error handling middleware
+  const handleMulterError = (err: any, req: any, res: any, next: any) => {
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ error: 'File too large. Maximum size is 10MB.' });
+      }
+      return res.status(400).json({ error: err.message });
+    } else if (err) {
+      return res.status(400).json({ error: err.message || 'Invalid file upload' });
+    }
+    next();
+  };
+
+  // File upload for messages
+  app.post("/api/chats/:id/messages/upload", requireAuth, upload.single('file'), handleMulterError, async (req, res) => {
+    const chatId = Number(req.params.id);
+    const user = req.user as User;
+    
+    const chat = await storage.getChat(chatId);
+    if (!chat) return res.sendStatus(404);
+    
+    if (user.role === 'designer' && chat.assignedToId !== user.id) {
+      return res.sendStatus(403);
+    }
+    
+    const content = req.body?.content || "Sent a file";
+    const file = req.file;
+    
+    // Create message with file info (storage method handles chat metadata update)
+    const message = await storage.createMessageWithFile(
+      chatId, 
+      user.id, 
+      "user", 
+      content,
+      file ? `/api/files/${chatId}/${file.filename}` : undefined,
+      file?.originalname
+    );
+    
+    res.status(201).json(message);
+  });
+
+  // Secure file serving with chat-level authorization and filename validation
+  app.get('/api/files/:chatId/:filename', requireAuth, async (req, res) => {
+    const user = req.user as User;
+    const chatId = Number(req.params.chatId);
+    const filename = req.params.filename;
+    
+    // Verify user has access to this chat
+    const chat = await storage.getChat(chatId);
+    if (!chat) return res.sendStatus(404);
+    
+    // Role-based authorization check
+    if (user.role === 'designer' && chat.assignedToId !== user.id) {
+      return res.sendStatus(403);
+    }
+    
+    // Verify this file actually belongs to a message in this chat via direct DB query
+    const expectedFileUrl = `/api/files/${chatId}/${filename}`;
+    const fileMessage = await storage.getMessageByFileUrl(chatId, expectedFileUrl);
+    
+    if (!fileMessage) {
+      return res.sendStatus(404); // File not associated with this chat
+    }
+    
+    const filePath = path.join(uploadsDir, filename);
+    if (!fs.existsSync(filePath)) {
+      return res.sendStatus(404);
+    }
+    
+    res.sendFile(filePath);
+  });
+
   // Chat messages endpoint
   app.get("/api/chats/:id/messages", requireAuth, async (req, res) => {
     const chatId = Number(req.params.id);
@@ -464,6 +589,27 @@ async function seedDatabase() {
     createdById: support.id,
   }, [{ serviceType: "LinkedIn Profile", quantity: 1, instructions: "Full profile revamp" }]);
 
+  // Create additional designers for testing "By Designer" section
+  const designer2Pass = await hashPassword("designer2");
+  const designer2 = await storage.createUser({
+    username: "designer2",
+    password: designer2Pass,
+    role: "designer",
+    name: "Maria Chen",
+    title: "CV Specialist",
+    avatar: "https://github.com/shadcn.png"
+  });
+
+  const designer3Pass = await hashPassword("designer3");
+  const designer3 = await storage.createUser({
+    username: "designer3",
+    password: designer3Pass,
+    role: "designer",
+    name: "Zain Ahmed",
+    title: "LinkedIn Expert",
+    avatar: "https://github.com/shadcn.png"
+  });
+
   // Create Chats
   const chat1 = await storage.createChat({
     clientName: "Banee Pasth",
@@ -472,24 +618,53 @@ async function seedDatabase() {
     status: "changes",
     assignedToId: designer.id,
     lastMessage: "Can you update the header?",
-    unreadCount: 2,
     tags: ["Changes", "Urgent"]
   });
 
   await storage.createMessage(chat1.id, null, "client", "Hi, I need some changes.");
   await storage.createMessage(chat1.id, null, "client", "Can you update the header?");
   
+  // Update unread count directly
+  await storage.updateChat(chat1.id, { unreadCount: 2 });
+  
   const chat2 = await storage.createChat({
-    clientName: "New Lead",
-    clientPhone: "+987654321",
+    clientName: "+923001234567",
+    clientPhone: "+923001234567",
     platform: "whatsapp",
     status: "new",
+    assignedToId: designer2.id,
     lastMessage: "I'm interested in your services.",
-    unreadCount: 1,
     tags: ["New"]
   });
   
   await storage.createMessage(chat2.id, null, "client", "I'm interested in your services.");
+  await storage.updateChat(chat2.id, { unreadCount: 1 });
+  
+  // Add more chats for different designers
+  const chat3 = await storage.createChat({
+    clientName: "Ali Khan",
+    clientPhone: "+923009876543",
+    platform: "whatsapp",
+    status: "satisfied",
+    assignedToId: designer2.id,
+    lastMessage: "Thank you, looks great!",
+    tags: ["Satisfied"]
+  });
+  
+  await storage.createMessage(chat3.id, null, "client", "Thank you, looks great!");
+  
+  const chat4 = await storage.createChat({
+    clientName: "Sara Malik",
+    clientPhone: "+923331234567",
+    platform: "whatsapp",
+    status: "new",
+    assignedToId: designer3.id,
+    lastMessage: "Need urgent CV update",
+    tags: ["Issues"]
+  });
+  
+  await storage.createMessage(chat4.id, null, "client", "Need urgent CV update");
+  await storage.updateChat(chat4.id, { unreadCount: 1 });
 
   // Create Message Shortcuts
   await seedMessageShortcuts();

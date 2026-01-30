@@ -113,6 +113,10 @@ All monetary values displayed in PKR (₨), stored as integers (cents) in the da
 - Role-based visibility: Admin/Support see all chats, Designer sees only assigned
 - WhatsApp integration ready (awaiting API credentials)
 - Send messages via /api/chats/:id/messages endpoint
+- File upload support via multer (10MB limit, images/PDFs/docs)
+- Files stored in /uploads directory, served with authentication
+- ShortcutsPage for admin to manage message templates (CRUD)
+- Real-time sync via polling (5s for chats, 3s for messages)
 
 ### Finance Updates (January 30, 2026)
 - Replaced single amountPaid field with advanceAmount and remainingAmount split

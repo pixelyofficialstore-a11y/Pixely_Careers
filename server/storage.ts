@@ -4,7 +4,7 @@ import {
   type OrderService, type InsertOrderService, type OrderWithServices, type MessageShortcut
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, sql, and } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -17,7 +17,7 @@ export interface IStorage {
   // Orders
   getOrder(id: number): Promise<OrderWithServices | undefined>;
   getOrders(role: string, userId: number): Promise<OrderWithServices[]>;
-  createOrder(order: InsertOrder, services?: InsertOrderService[]): Promise<Order>;
+  createOrder(order: InsertOrder, services?: Omit<InsertOrderService, 'orderId'>[]): Promise<Order>;
   updateOrder(id: number, updates: Partial<InsertOrder>): Promise<Order>;
   getOrderServices(orderId: number): Promise<OrderService[]>;
   createOrderService(service: InsertOrderService): Promise<OrderService>;
@@ -29,6 +29,8 @@ export interface IStorage {
   createChat(chat: InsertChat): Promise<Chat>;
   updateChat(id: number, updates: Partial<Chat>): Promise<Chat>;
   createMessage(chatId: number, senderId: number | null, senderType: string, content: string): Promise<Message>;
+  createMessageWithFile(chatId: number, senderId: number | null, senderType: string, content: string, fileUrl?: string, fileName?: string): Promise<Message>;
+  getMessageByFileUrl(chatId: number, fileUrl: string): Promise<Message | undefined>;
 
   // Notifications
   getNotifications(userId: number): Promise<Notification[]>;
@@ -37,6 +39,9 @@ export interface IStorage {
 
   // Message Shortcuts
   getShortcuts(): Promise<MessageShortcut[]>;
+  createShortcut(data: { command: string; content: string; isActive: boolean }): Promise<MessageShortcut>;
+  updateShortcut(id: number, updates: Partial<{ command: string; content: string; isActive: boolean }>): Promise<MessageShortcut | undefined>;
+  deleteShortcut(id: number): Promise<void>;
   getChatMessages(chatId: number): Promise<Message[]>;
 
   // Stats
@@ -95,7 +100,7 @@ export class DatabaseStorage implements IStorage {
     }));
   }
 
-  async createOrder(order: InsertOrder, services?: InsertOrderService[]): Promise<Order> {
+  async createOrder(order: InsertOrder, services?: Omit<InsertOrderService, 'orderId'>[]): Promise<Order> {
     const [newOrder] = await db.insert(orders).values(order).returning();
     if (services && services.length > 0) {
       for (const svc of services) {
@@ -175,6 +180,35 @@ export class DatabaseStorage implements IStorage {
     return message;
   }
 
+  async createMessageWithFile(chatId: number, senderId: number | null, senderType: string, content: string, fileUrl?: string, fileName?: string): Promise<Message> {
+    const [message] = await db.insert(messages).values({
+      chatId,
+      senderId,
+      senderType,
+      messageType: fileUrl ? "file" : "text",
+      content,
+      fileUrl: fileUrl || null,
+      fileName: fileName || null,
+    }).returning();
+
+    // Update chat metadata (same as createMessage)
+    const displayMessage = fileName ? `Sent: ${fileName}` : content;
+    await db.update(chats).set({
+      lastMessage: displayMessage,
+      lastMessageAt: new Date(),
+      unreadCount: sql`unread_count + 1`
+    }).where(eq(chats.id, chatId));
+
+    return message;
+  }
+
+  async getMessageByFileUrl(chatId: number, fileUrl: string): Promise<Message | undefined> {
+    const [message] = await db.select().from(messages)
+      .where(and(eq(messages.chatId, chatId), eq(messages.fileUrl, fileUrl)))
+      .limit(1);
+    return message;
+  }
+
   // Notifications
   async getNotifications(userId: number): Promise<Notification[]> {
     return await db.select().from(notifications)
@@ -204,6 +238,20 @@ export class DatabaseStorage implements IStorage {
   // Message Shortcuts
   async getShortcuts(): Promise<MessageShortcut[]> {
     return await db.select().from(messageShortcuts).where(eq(messageShortcuts.isActive, true));
+  }
+
+  async createShortcut(data: { command: string; content: string; isActive: boolean }): Promise<MessageShortcut> {
+    const [shortcut] = await db.insert(messageShortcuts).values(data).returning();
+    return shortcut;
+  }
+
+  async updateShortcut(id: number, updates: Partial<{ command: string; content: string; isActive: boolean }>): Promise<MessageShortcut | undefined> {
+    const [shortcut] = await db.update(messageShortcuts).set(updates).where(eq(messageShortcuts.id, id)).returning();
+    return shortcut;
+  }
+
+  async deleteShortcut(id: number): Promise<void> {
+    await db.delete(messageShortcuts).where(eq(messageShortcuts.id, id));
   }
 
   async getChatMessages(chatId: number): Promise<Message[]> {

@@ -26,6 +26,9 @@ import {
   CheckCircle,
   Paperclip,
   Check,
+  X,
+  Image,
+  File,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -79,8 +82,10 @@ export default function ChatsPage() {
   const [messageText, setMessageText] = useState("");
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [filterTag, setFilterTag] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isAdmin = user?.role === "admin";
   const isSupport = user?.role === "support";
@@ -88,11 +93,13 @@ export default function ChatsPage() {
 
   const { data: chats, isLoading } = useQuery<ChatWithDetails[]>({
     queryKey: ["/api/chats"],
+    refetchInterval: 5000, // Poll every 5 seconds for real-time sync
   });
 
   const { data: messages } = useQuery<Message[]>({
     queryKey: ["/api/chats", selectedChat?.id, "messages"],
     enabled: !!selectedChat,
+    refetchInterval: 3000, // Poll messages more frequently
   });
 
   const { data: teamMembers } = useQuery<User[]>({
@@ -106,13 +113,24 @@ export default function ChatsPage() {
   const designers = teamMembers?.filter(u => u.role === "designer") || [];
 
   const sendMessageMutation = useMutation({
-    mutationFn: async ({ chatId, content }: { chatId: number; content: string }) => {
+    mutationFn: async ({ chatId, content, file }: { chatId: number; content: string; file?: File }) => {
+      if (file) {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("content", content);
+        return fetch(`/api/chats/${chatId}/messages/upload`, {
+          method: "POST",
+          body: formData,
+          credentials: "include",
+        }).then(res => res.json());
+      }
       return apiRequest("POST", `/api/chats/${chatId}/messages`, { content });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/chats", selectedChat?.id, "messages"] });
       queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
       setMessageText("");
+      setSelectedFile(null);
       setShowShortcuts(false);
     },
   });
@@ -123,11 +141,10 @@ export default function ChatsPage() {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
-      // Update selected chat locally
       if (selectedChat && variables.id === selectedChat.id) {
         setSelectedChat(prev => prev ? { ...prev, ...variables.updates } : null);
       }
-      toast({ title: "Success", description: "Chat updated" });
+      toast({ title: "Updated", description: "Chat updated successfully" });
     },
   });
 
@@ -135,7 +152,6 @@ export default function ChatsPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Update selected chat when chats list updates
   useEffect(() => {
     if (selectedChat && chats) {
       const updated = chats.find(c => c.id === selectedChat.id);
@@ -146,8 +162,12 @@ export default function ChatsPage() {
   }, [chats]);
 
   const handleSend = () => {
-    if (!messageText.trim() || !selectedChat) return;
-    sendMessageMutation.mutate({ chatId: selectedChat.id, content: messageText });
+    if ((!messageText.trim() && !selectedFile) || !selectedChat) return;
+    sendMessageMutation.mutate({ 
+      chatId: selectedChat.id, 
+      content: messageText,
+      file: selectedFile || undefined
+    });
   };
 
   const handleShortcut = (shortcut: MessageShortcut) => {
@@ -159,12 +179,7 @@ export default function ChatsPage() {
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
     setMessageText(value);
-    
-    if (value.startsWith("/") || value.startsWith("//")) {
-      setShowShortcuts(true);
-    } else {
-      setShowShortcuts(false);
-    }
+    setShowShortcuts(value.startsWith("/") || value.startsWith("//"));
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -186,18 +201,32 @@ export default function ChatsPage() {
 
   const handleSetTag = (newTag: string) => {
     if (!selectedChat) return;
-    // Set the tag (replace existing tags with new one)
     updateChatMutation.mutate({ 
       id: selectedChat.id, 
       updates: { tags: [newTag] } 
     });
   };
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+    }
+  };
+
   const copyPhoneNumber = () => {
     if (selectedChat?.clientPhone) {
       navigator.clipboard.writeText(selectedChat.clientPhone);
-      toast({ title: "Copied", description: "Phone number copied to clipboard" });
+      toast({ title: "Copied", description: "Phone number copied" });
     }
+  };
+
+  // Show phone number instead of "New Lead" placeholder
+  const getDisplayName = (chat: ChatWithDetails) => {
+    if (chat.clientName && chat.clientName !== "New Lead" && chat.clientName.trim() !== "") {
+      return chat.clientName;
+    }
+    return chat.clientPhone || "Unknown";
   };
 
   const filteredChats = chats?.filter(chat => {
@@ -205,22 +234,42 @@ export default function ChatsPage() {
     if (isDesigner && chat.assignedToId !== user?.id) return false;
     if (filterTag && !(chat.tags as string[] || []).includes(filterTag)) return false;
     if (search) {
-      return (
-        chat.clientName.toLowerCase().includes(search.toLowerCase()) ||
-        chat.clientPhone?.includes(search)
-      );
+      const name = getDisplayName(chat).toLowerCase();
+      return name.includes(search.toLowerCase()) || chat.clientPhone?.includes(search);
     }
     return true;
   });
 
   const newMessageChats = filteredChats?.filter(c => (c.unreadCount || 0) > 0);
-  const designerGroups = isAdmin || isSupport
-    ? Array.from(new Set(chats?.filter(c => c.assignee).map(c => c.assignee?.id)))
-        .map(id => ({
-          designer: chats?.find(c => c.assignee?.id === id)?.assignee,
-          chats: filteredChats?.filter(c => c.assignedToId === id) || [],
-        }))
-    : [];
+  
+  // Group chats by designer for "By Designer" tab
+  const designerGroups = (() => {
+    if (!isAdmin && !isSupport) return [];
+    const groups: { designer: User | null; chats: ChatWithDetails[] }[] = [];
+    const assignedDesignerIds = new Set<number>();
+    
+    filteredChats?.forEach(chat => {
+      if (chat.assignedToId) {
+        assignedDesignerIds.add(chat.assignedToId);
+      }
+    });
+    
+    // Add groups for each designer with assigned chats
+    designers.forEach(d => {
+      const designerChats = filteredChats?.filter(c => c.assignedToId === d.id) || [];
+      if (designerChats.length > 0) {
+        groups.push({ designer: d, chats: designerChats });
+      }
+    });
+    
+    // Add unassigned group
+    const unassignedChats = filteredChats?.filter(c => !c.assignedToId) || [];
+    if (unassignedChats.length > 0) {
+      groups.push({ designer: null, chats: unassignedChats });
+    }
+    
+    return groups;
+  })();
 
   const getTagStyle = (tag: string) => TAG_COLORS[tag] || TAG_COLORS["New"];
 
@@ -234,20 +283,19 @@ export default function ChatsPage() {
   return (
     <div className="flex h-screen w-full fixed inset-0 lg:left-64 bg-slate-950">
       {/* Left Sidebar - Chat List */}
-      <div className="w-80 border-r border-slate-800 flex flex-col bg-slate-950">
+      <div className="w-80 min-w-[280px] border-r border-slate-800 flex flex-col bg-slate-950">
         {/* Header */}
-        <div className="p-4 border-b border-slate-800">
-          <div className="flex items-center gap-2 mb-4">
+        <div className="p-3 border-b border-slate-800">
+          <div className="flex items-center gap-2 mb-3">
             <MessageSquare className="w-5 h-5 text-blue-500" />
             <h2 className="text-lg font-bold text-white">Chats</h2>
           </div>
           
-          {/* Search */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
             <Input
               placeholder="Search by name, number, or order ID"
-              className="pl-10 bg-slate-900 border-slate-700 text-white text-sm"
+              className="pl-10 bg-slate-900 border-slate-700 text-white text-sm h-9"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               data-testid="input-search-chats"
@@ -255,26 +303,29 @@ export default function ChatsPage() {
           </div>
         </div>
 
-        {/* Tabs with Content */}
+        {/* Tabs */}
         <Tabs defaultValue="all" className="flex-1 flex flex-col overflow-hidden">
-          <div className="px-4 py-2 border-b border-slate-800">
-            <TabsList className="bg-transparent p-0 h-auto gap-1">
+          <div className="px-3 py-3 border-b border-slate-800">
+            <TabsList className="bg-slate-800/50 p-1 h-auto w-full grid grid-cols-3 gap-1">
               <TabsTrigger 
                 value="all" 
-                className="px-3 py-1.5 text-sm data-[state=active]:bg-slate-800 data-[state=active]:text-white rounded-md"
+                className="px-2 py-2 text-xs data-[state=active]:bg-slate-700 data-[state=active]:text-white rounded"
+                data-testid="tab-all-chats"
               >
                 All Chats
               </TabsTrigger>
               <TabsTrigger 
                 value="new" 
-                className="px-3 py-1.5 text-sm data-[state=active]:bg-slate-800 data-[state=active]:text-white rounded-md"
+                className="px-2 py-2 text-xs data-[state=active]:bg-slate-700 data-[state=active]:text-white rounded"
+                data-testid="tab-new-messages"
               >
-                New Messages {newMessageChats && newMessageChats.length > 0 && `(${newMessageChats.length})`}
+                New {newMessageChats && newMessageChats.length > 0 && `(${newMessageChats.length})`}
               </TabsTrigger>
               {(isAdmin || isSupport) && (
                 <TabsTrigger 
                   value="designers" 
-                  className="px-3 py-1.5 text-sm data-[state=active]:bg-slate-800 data-[state=active]:text-white rounded-md"
+                  className="px-2 py-2 text-xs data-[state=active]:bg-slate-700 data-[state=active]:text-white rounded"
+                  data-testid="tab-by-designer"
                 >
                   By Designer
                 </TabsTrigger>
@@ -282,7 +333,6 @@ export default function ChatsPage() {
             </TabsList>
           </div>
 
-          {/* All Chats Tab */}
           <TabsContent value="all" className="flex-1 m-0 overflow-hidden">
             <ScrollArea className="h-full">
               <div className="p-2 space-y-1">
@@ -293,6 +343,7 @@ export default function ChatsPage() {
                     isSelected={selectedChat?.id === chat.id}
                     onClick={() => setSelectedChat(chat)}
                     getTagStyle={getTagStyle}
+                    getDisplayName={getDisplayName}
                   />
                 ))}
                 {(!filteredChats || filteredChats.length === 0) && (
@@ -302,7 +353,6 @@ export default function ChatsPage() {
             </ScrollArea>
           </TabsContent>
 
-          {/* New Messages Tab */}
           <TabsContent value="new" className="flex-1 m-0 overflow-hidden">
             <ScrollArea className="h-full">
               <div className="p-2 space-y-1">
@@ -313,6 +363,7 @@ export default function ChatsPage() {
                     isSelected={selectedChat?.id === chat.id}
                     onClick={() => setSelectedChat(chat)}
                     getTagStyle={getTagStyle}
+                    getDisplayName={getDisplayName}
                   />
                 ))}
                 {(!newMessageChats || newMessageChats.length === 0) && (
@@ -322,17 +373,27 @@ export default function ChatsPage() {
             </ScrollArea>
           </TabsContent>
 
-          {/* By Designer Tab */}
           {(isAdmin || isSupport) && (
             <TabsContent value="designers" className="flex-1 m-0 overflow-hidden">
               <ScrollArea className="h-full">
-                <div className="p-2 space-y-4">
+                <div className="p-2 space-y-3">
                   {designerGroups.map(group => (
                     <div key={group.designer?.id || "unassigned"}>
-                      <h4 className="text-xs font-semibold text-slate-400 px-2 mb-2">
-                        {group.designer?.name || "Unassigned"} ({group.chats.length})
-                      </h4>
-                      <div className="space-y-1">
+                      <div className="flex items-center gap-2 px-2 py-1 mb-1">
+                        <div className={cn(
+                          "w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-medium",
+                          group.designer ? getAvatarColor(group.designer.name) : "bg-slate-600"
+                        )}>
+                          {group.designer?.name.charAt(0) || "?"}
+                        </div>
+                        <span className="text-xs font-semibold text-slate-300">
+                          {group.designer?.name || "Unassigned"}
+                        </span>
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                          {group.chats.length}
+                        </Badge>
+                      </div>
+                      <div className="space-y-1 pl-2">
                         {group.chats.map(chat => (
                           <ChatListItem
                             key={chat.id}
@@ -340,6 +401,8 @@ export default function ChatsPage() {
                             isSelected={selectedChat?.id === chat.id}
                             onClick={() => setSelectedChat(chat)}
                             getTagStyle={getTagStyle}
+                            getDisplayName={getDisplayName}
+                            compact
                           />
                         ))}
                       </div>
@@ -355,9 +418,9 @@ export default function ChatsPage() {
         </Tabs>
 
         {/* Filter Tags */}
-        <div className="p-4 border-t border-slate-800">
+        <div className="p-3 border-t border-slate-800">
           <p className="text-xs text-slate-500 mb-2">Filter Tags</p>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-1.5">
             {CHAT_TAGS.map(tag => {
               const style = getTagStyle(tag);
               const isActive = filterTag === tag;
@@ -366,131 +429,107 @@ export default function ChatsPage() {
                   key={tag}
                   onClick={() => setFilterTag(isActive ? null : tag)}
                   className={cn(
-                    "flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors",
+                    "flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors",
                     isActive ? style.bg : "bg-slate-800 hover:bg-slate-700",
                     isActive ? style.text : "text-slate-400"
                   )}
                   data-testid={`filter-tag-${tag.toLowerCase()}`}
                 >
-                  <span className={cn("w-2 h-2 rounded-full", style.dot)} />
+                  <span className={cn("w-1.5 h-1.5 rounded-full", style.dot)} />
                   {tag}
                 </button>
               );
             })}
           </div>
         </div>
-
-        {/* Bottom Status Bar */}
-        <div className="p-3 border-t border-slate-800 flex items-center gap-3">
-          {CHAT_TAGS.map(tag => {
-            const style = getTagStyle(tag);
-            return (
-              <div key={tag} className="flex items-center gap-1.5 text-xs text-slate-400">
-                <span className={cn("w-2 h-2 rounded-full", style.dot)} />
-                {tag}
-              </div>
-            );
-          })}
-        </div>
       </div>
 
       {/* Right Panel - Chat Detail */}
-      <div className="flex-1 flex flex-col bg-slate-900">
+      <div className="flex-1 flex flex-col bg-slate-900 min-w-0">
         {selectedChat ? (
           <>
-            {/* Chat Header */}
-            <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className={cn(
-                  "w-12 h-12 rounded-full flex items-center justify-center text-white text-lg font-medium",
-                  getAvatarColor(selectedChat.clientName)
-                )}>
-                  {selectedChat.clientName.charAt(0)}
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-white font-semibold text-lg">{selectedChat.clientName}</h3>
-                    {selectedChat.clientPhone && (
+            {/* Chat Header - Responsive */}
+            <div className="p-3 border-b border-slate-800">
+              <div className="flex items-center justify-between gap-2">
+                {/* Left: Avatar and Name */}
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <div className={cn(
+                    "w-10 h-10 rounded-full flex items-center justify-center text-white font-medium flex-shrink-0",
+                    getAvatarColor(selectedChat.clientName)
+                  )}>
+                    {selectedChat.clientName.charAt(0)}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-white font-semibold truncate">{getDisplayName(selectedChat)}</h3>
                       <span className="text-slate-400 text-sm">{selectedChat.clientPhone}</span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 mt-1">
-                    {(selectedChat.tags as string[] || []).map((tag, idx) => {
-                      const style = getTagStyle(tag);
-                      return (
-                        <Badge key={idx} className={cn("text-xs", style.bg, style.text, "border-0")}>
-                          {tag}
-                        </Badge>
-                      );
-                    })}
-                    {selectedChat.linkedOrderId && (
-                      <Badge variant="outline" className="text-xs border-blue-500/30 text-blue-400">
-                        Order #{selectedChat.linkedOrderId}
-                      </Badge>
-                    )}
+                    </div>
+                    <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                      {(selectedChat.tags as string[] || []).slice(0, 2).map((tag, idx) => {
+                        const style = getTagStyle(tag);
+                        return (
+                          <Badge key={idx} className={cn("text-[10px] px-1.5 py-0", style.bg, style.text, "border-0")}>
+                            {tag}
+                          </Badge>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="flex items-center gap-2">
-                {/* Assign Dropdown */}
-                {(isAdmin || isSupport) && (
-                  <Select
-                    value={selectedChat.assignedToId?.toString() || ""}
-                    onValueChange={(val) => handleAssign(Number(val))}
-                  >
-                    <SelectTrigger className="w-auto h-8 bg-transparent border-slate-700 text-slate-300 text-sm gap-2">
-                      <span className="text-slate-500">Assign to:</span>
-                      <SelectValue placeholder="Select" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-slate-900 border-slate-700">
-                      {designers.map(d => (
-                        <SelectItem key={d.id} value={d.id.toString()} className="text-slate-300">
-                          {d.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
+                {/* Right: Controls */}
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  {(isAdmin || isSupport) && (
+                    <Select
+                      value={selectedChat.assignedToId?.toString() || ""}
+                      onValueChange={(val) => handleAssign(Number(val))}
+                    >
+                      <SelectTrigger className="w-auto h-8 bg-slate-800 border-slate-700 text-slate-300 text-xs gap-1 px-2">
+                        <span className="hidden sm:inline text-slate-500">Assign:</span>
+                        <SelectValue placeholder="Select" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-slate-900 border-slate-700">
+                        {designers.map(d => (
+                          <SelectItem key={d.id} value={d.id.toString()} className="text-slate-300 text-sm">
+                            {d.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
 
-                {/* Tag Dropdown */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="sm" className="text-slate-400 gap-1">
-                      Tag: {(selectedChat.tags as string[] || [])[0] || "None"}
-                      <ChevronDown className="w-3 h-3" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="bg-slate-900 border-slate-700">
-                    {CHAT_TAGS.map(tag => {
-                      const isActive = (selectedChat.tags as string[] || []).includes(tag);
-                      return (
-                        <DropdownMenuItem 
-                          key={tag} 
-                          onClick={() => handleSetTag(tag)}
-                          className="text-slate-300 flex items-center justify-between"
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className={cn("w-2 h-2 rounded-full", getTagStyle(tag).dot)} />
-                            {tag}
-                          </div>
-                          {isActive && <Check className="w-4 h-4 text-green-500" />}
-                        </DropdownMenuItem>
-                      );
-                    })}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="sm" className="text-slate-400 gap-1 h-8 px-2">
+                        <span className="hidden sm:inline">Tag</span>
+                        <ChevronDown className="w-3 h-3" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="bg-slate-900 border-slate-700">
+                      {CHAT_TAGS.map(tag => {
+                        const isActive = (selectedChat.tags as string[] || []).includes(tag);
+                        return (
+                          <DropdownMenuItem 
+                            key={tag} 
+                            onClick={() => handleSetTag(tag)}
+                            className="text-slate-300 flex items-center justify-between"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className={cn("w-2 h-2 rounded-full", getTagStyle(tag).dot)} />
+                              {tag}
+                            </div>
+                            {isActive && <Check className="w-4 h-4 text-green-500" />}
+                          </DropdownMenuItem>
+                        );
+                      })}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
 
-                {/* Action Icons */}
-                <div className="flex items-center gap-1 ml-2">
-                  <Button variant="ghost" size="icon" className="text-slate-400 h-8 w-8">
-                    <ExternalLink className="w-4 h-4" />
-                  </Button>
                   <Button variant="ghost" size="icon" className="text-slate-400 h-8 w-8" onClick={copyPhoneNumber}>
                     <Copy className="w-4 h-4" />
                   </Button>
                   <Button variant="ghost" size="icon" className="text-slate-400 h-8 w-8">
-                    <Share2 className="w-4 h-4" />
+                    <ExternalLink className="w-4 h-4" />
                   </Button>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -519,41 +558,73 @@ export default function ChatsPage() {
             </ScrollArea>
 
             {/* Message Input */}
-            <div className="p-4 border-t border-slate-800 relative">
-              {/* Shortcuts Popup */}
+            <div className="p-3 border-t border-slate-800 relative">
               {showShortcuts && filteredShortcuts && filteredShortcuts.length > 0 && (
-                <div className="absolute bottom-full left-4 right-4 mb-2 bg-slate-800 rounded-lg border border-slate-700 shadow-xl overflow-hidden">
+                <div className="absolute bottom-full left-3 right-3 mb-2 bg-slate-800 rounded-lg border border-slate-700 shadow-xl overflow-hidden">
                   <div className="p-2 border-b border-slate-700">
                     <div className="flex items-center gap-2 text-slate-400 text-sm px-2">
                       <span className="text-blue-400">&gt;</span>
                       <span>{messageText}</span>
                     </div>
                   </div>
-                  <div className="max-h-48 overflow-y-auto">
+                  <div className="max-h-40 overflow-y-auto">
                     {filteredShortcuts.map(shortcut => (
                       <button
                         key={shortcut.id}
-                        className="w-full text-left px-4 py-2 hover:bg-slate-700 flex items-center gap-3"
+                        className="w-full text-left px-3 py-2 hover:bg-slate-700 flex items-center gap-3 text-sm"
                         onClick={() => handleShortcut(shortcut)}
                         data-testid={`shortcut-${shortcut.command}`}
                       >
                         <span className="text-blue-400 font-medium">/{shortcut.command}</span>
-                        <span className="text-slate-400 text-sm truncate">{shortcut.content.substring(0, 50)}...</span>
+                        <span className="text-slate-400 truncate">{shortcut.content.substring(0, 40)}...</span>
                       </button>
                     ))}
                   </div>
                 </div>
               )}
 
+              {/* File Preview */}
+              {selectedFile && (
+                <div className="mb-2 p-2 bg-slate-800 rounded-lg flex items-center gap-2 max-w-xs">
+                  {selectedFile.type.startsWith("image/") ? (
+                    <Image className="w-5 h-5 text-blue-400" />
+                  ) : (
+                    <File className="w-5 h-5 text-blue-400" />
+                  )}
+                  <span className="text-sm text-slate-300 truncate flex-1">{selectedFile.name}</span>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-6 w-6 text-slate-400"
+                    onClick={() => setSelectedFile(null)}
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+              )}
+
               <div className="flex items-end gap-2 max-w-3xl mx-auto">
-                <Button variant="ghost" size="icon" className="text-slate-400 h-[44px] w-[44px]">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  onChange={handleFileSelect}
+                  accept="image/*,.pdf,.doc,.docx"
+                />
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="text-slate-400 h-10 w-10"
+                  onClick={() => fileInputRef.current?.click()}
+                  data-testid="button-attach-file"
+                >
                   <Paperclip className="w-5 h-5" />
                 </Button>
-                <div className="flex-1 relative">
+                <div className="flex-1">
                   <Textarea
                     ref={inputRef}
                     placeholder="Type a message... (use / for shortcuts)"
-                    className="bg-slate-800 border-slate-700 text-white resize-none min-h-[44px] max-h-32"
+                    className="bg-slate-800 border-slate-700 text-white resize-none min-h-[40px] max-h-32 text-sm"
                     value={messageText}
                     onChange={handleInputChange}
                     onKeyDown={handleKeyDown}
@@ -563,8 +634,8 @@ export default function ChatsPage() {
                 </div>
                 <Button
                   onClick={handleSend}
-                  disabled={!messageText.trim() || sendMessageMutation.isPending}
-                  className="bg-blue-600 hover:bg-blue-700 h-[44px] px-4"
+                  disabled={(!messageText.trim() && !selectedFile) || sendMessageMutation.isPending}
+                  className="bg-blue-600 hover:bg-blue-700 h-10 px-4"
                   data-testid="button-send-message"
                 >
                   <Send className="w-4 h-4" />
@@ -577,7 +648,7 @@ export default function ChatsPage() {
             <div className="text-center">
               <MessageSquare className="w-16 h-16 text-slate-700 mx-auto mb-4" />
               <h3 className="text-xl font-bold text-white mb-2">Select a Chat</h3>
-              <p className="text-slate-400">Choose a conversation from the sidebar to start messaging</p>
+              <p className="text-slate-400">Choose a conversation from the sidebar</p>
             </div>
           </div>
         )}
@@ -591,62 +662,76 @@ function ChatListItem({
   isSelected,
   onClick,
   getTagStyle,
+  getDisplayName,
+  compact = false,
 }: {
   chat: ChatWithDetails;
   isSelected: boolean;
   onClick: () => void;
   getTagStyle: (tag: string) => { bg: string; text: string; dot: string };
+  getDisplayName: (chat: ChatWithDetails) => string;
+  compact?: boolean;
 }) {
   const primaryTag = (chat.tags as string[] || [])[0];
   const tagStyle = primaryTag ? getTagStyle(primaryTag) : null;
+  const displayName = getDisplayName(chat);
   
   return (
     <button
       onClick={onClick}
       className={cn(
-        "w-full text-left p-3 rounded-lg transition-colors relative",
+        "w-full text-left rounded-lg transition-colors relative",
+        compact ? "p-2" : "p-3",
         isSelected 
           ? "bg-slate-800/70 border-l-2 border-l-blue-500" 
           : "hover:bg-slate-800/50"
       )}
       data-testid={`chat-item-${chat.id}`}
     >
-      <div className="flex items-start gap-3">
-        <div className="relative">
+      <div className="flex items-start gap-2">
+        <div className="relative flex-shrink-0">
           <div className={cn(
-            "w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-medium",
-            getAvatarColor(chat.clientName)
+            "rounded-full flex items-center justify-center text-white font-medium",
+            compact ? "w-8 h-8 text-xs" : "w-10 h-10 text-sm",
+            getAvatarColor(displayName)
           )}>
-            {chat.clientName.charAt(0)}
+            {displayName.charAt(0)}
           </div>
           {(chat.unreadCount || 0) > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-slate-950" />
+            <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-slate-950" />
           )}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between">
-            <span className="text-white font-medium text-sm truncate">{chat.clientName}</span>
+          <div className="flex items-center justify-between gap-1">
+            <span className={cn(
+              "text-white font-medium truncate",
+              compact ? "text-xs" : "text-sm"
+            )}>
+              {displayName}
+            </span>
             {chat.lastMessageAt && (
-              <span className="text-xs text-slate-500">
+              <span className="text-[10px] text-slate-500 flex-shrink-0">
                 {format(new Date(chat.lastMessageAt), "h:mm a")}
               </span>
             )}
           </div>
           
-          <div className="flex items-center gap-1.5 mt-1">
+          <div className="flex items-center gap-1 mt-0.5">
             {primaryTag && tagStyle && (
-              <Badge className={cn("text-[10px] px-1.5 py-0 h-5", tagStyle.bg, tagStyle.text, "border-0")}>
+              <Badge className={cn("text-[10px] px-1 py-0 h-4", tagStyle.bg, tagStyle.text, "border-0")}>
                 {primaryTag}
               </Badge>
             )}
             {(chat.unreadCount || 0) > 0 && (
-              <Badge className="bg-blue-600 text-white text-[10px] px-1.5 py-0 h-5">
+              <Badge className="bg-blue-600 text-white text-[10px] px-1 py-0 h-4">
                 {chat.unreadCount} New
               </Badge>
             )}
           </div>
           
-          <p className="text-xs text-slate-400 truncate mt-1">{chat.lastMessage || "No messages yet"}</p>
+          {!compact && (
+            <p className="text-xs text-slate-400 truncate mt-0.5">{chat.lastMessage || "No messages"}</p>
+          )}
         </div>
       </div>
     </button>
@@ -676,28 +761,20 @@ function MessageBubble({ message }: { message: Message }) {
       <div
         className={cn(
           "max-w-[70%] rounded-2xl px-4 py-2",
-          isUser
-            ? "bg-slate-700 text-white"
-            : "bg-slate-800 text-slate-200"
+          isUser ? "bg-slate-700 text-white" : "bg-slate-800 text-slate-200"
         )}
       >
         {message.messageType === "file" && message.fileUrl && (
-          <div className="mb-2 relative">
+          <div className="mb-2">
             <img 
               src={message.fileUrl} 
               alt={message.fileName || "Attachment"} 
               className="rounded-lg max-w-full"
             />
-            <span className="absolute bottom-2 right-2 text-xs text-white/70 bg-black/50 px-1 rounded">
-              {format(new Date(message.createdAt!), "h:mm a")}
-            </span>
           </div>
         )}
         <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-        <p className={cn(
-          "text-xs mt-1 text-right",
-          isUser ? "text-slate-400" : "text-slate-500"
-        )}>
+        <p className={cn("text-xs mt-1 text-right", isUser ? "text-slate-400" : "text-slate-500")}>
           {format(new Date(message.createdAt!), "h:mm a")}
         </p>
       </div>
