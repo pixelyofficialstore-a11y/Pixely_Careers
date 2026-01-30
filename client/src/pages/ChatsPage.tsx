@@ -83,7 +83,6 @@ export default function ChatsPage() {
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [filterTag, setFilterTag] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [selectedDesignerFilter, setSelectedDesignerFilter] = useState<string>("all");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -242,35 +241,6 @@ export default function ChatsPage() {
   });
 
   const newMessageChats = filteredChats?.filter(c => (c.unreadCount || 0) > 0);
-  
-  // Group chats by designer for "By Designer" tab
-  const designerGroups = (() => {
-    if (!isAdmin && !isSupport) return [];
-    const groups: { designer: User | null; chats: ChatWithDetails[] }[] = [];
-    const assignedDesignerIds = new Set<number>();
-    
-    filteredChats?.forEach(chat => {
-      if (chat.assignedToId) {
-        assignedDesignerIds.add(chat.assignedToId);
-      }
-    });
-    
-    // Add groups for each designer with assigned chats
-    designers.forEach(d => {
-      const designerChats = filteredChats?.filter(c => c.assignedToId === d.id) || [];
-      if (designerChats.length > 0) {
-        groups.push({ designer: d, chats: designerChats });
-      }
-    });
-    
-    // Add unassigned group
-    const unassignedChats = filteredChats?.filter(c => !c.assignedToId) || [];
-    if (unassignedChats.length > 0) {
-      groups.push({ designer: null, chats: unassignedChats });
-    }
-    
-    return groups;
-  })();
 
   const getTagStyle = (tag: string) => TAG_COLORS[tag] || TAG_COLORS["New"];
 
@@ -307,7 +277,7 @@ export default function ChatsPage() {
         {/* Tabs */}
         <Tabs defaultValue="all" className="flex-1 flex flex-col overflow-hidden">
           <div className="px-3 py-3 border-b border-slate-800">
-            <TabsList className="bg-slate-800/50 p-1 h-auto w-full grid grid-cols-3 gap-1">
+            <TabsList className="bg-slate-800/50 p-1 h-auto w-full grid grid-cols-2 gap-1">
               <TabsTrigger 
                 value="all" 
                 className="px-2 py-2 text-xs data-[state=active]:bg-slate-700 data-[state=active]:text-white rounded"
@@ -322,15 +292,6 @@ export default function ChatsPage() {
               >
                 New {newMessageChats && newMessageChats.length > 0 && `(${newMessageChats.length})`}
               </TabsTrigger>
-              {(isAdmin || isSupport) && (
-                <TabsTrigger 
-                  value="designers" 
-                  className="px-2 py-2 text-xs data-[state=active]:bg-slate-700 data-[state=active]:text-white rounded"
-                  data-testid="tab-by-designer"
-                >
-                  By Designer
-                </TabsTrigger>
-              )}
             </TabsList>
           </div>
 
@@ -374,78 +335,6 @@ export default function ChatsPage() {
             </ScrollArea>
           </TabsContent>
 
-          {(isAdmin || isSupport) && (
-            <TabsContent value="designers" className="flex-1 m-0 overflow-hidden flex flex-col">
-              {/* Designer Filter Dropdown */}
-              <div className="p-2 border-b border-slate-800">
-                <Select
-                  value={selectedDesignerFilter}
-                  onValueChange={setSelectedDesignerFilter}
-                >
-                  <SelectTrigger className="w-full h-9 bg-slate-800 border-slate-700 text-slate-300 text-sm" data-testid="select-designer-filter">
-                    <SelectValue placeholder="Select Designer" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-slate-900 border-slate-700">
-                    <SelectItem value="all" className="text-slate-300 text-sm">All Designers</SelectItem>
-                    <SelectItem value="unassigned" className="text-slate-300 text-sm">Unassigned</SelectItem>
-                    {designers.map(d => (
-                      <SelectItem key={d.id} value={d.id.toString()} className="text-slate-300 text-sm">
-                        {d.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <ScrollArea className="flex-1">
-                <div className="p-2 space-y-3">
-                  {designerGroups
-                    .filter(group => {
-                      if (selectedDesignerFilter === "all") return true;
-                      if (selectedDesignerFilter === "unassigned") return !group.designer;
-                      return group.designer?.id.toString() === selectedDesignerFilter;
-                    })
-                    .map(group => (
-                    <div key={group.designer?.id || "unassigned"}>
-                      <div className="flex items-center gap-2 px-2 py-1 mb-1">
-                        <div className={cn(
-                          "w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-medium",
-                          group.designer ? getAvatarColor(group.designer.name) : "bg-slate-600"
-                        )}>
-                          {group.designer?.name.charAt(0) || "?"}
-                        </div>
-                        <span className="text-xs font-semibold text-slate-300">
-                          {group.designer?.name || "Unassigned"}
-                        </span>
-                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                          {group.chats.length}
-                        </Badge>
-                      </div>
-                      <div className="space-y-1 pl-2">
-                        {group.chats.map(chat => (
-                          <ChatListItem
-                            key={chat.id}
-                            chat={chat}
-                            isSelected={selectedChat?.id === chat.id}
-                            onClick={() => setSelectedChat(chat)}
-                            getTagStyle={getTagStyle}
-                            getDisplayName={getDisplayName}
-                            compact
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                  {designerGroups.filter(group => {
-                    if (selectedDesignerFilter === "all") return true;
-                    if (selectedDesignerFilter === "unassigned") return !group.designer;
-                    return group.designer?.id.toString() === selectedDesignerFilter;
-                  }).length === 0 && (
-                    <p className="text-slate-500 text-center py-8 text-sm">No chats found</p>
-                  )}
-                </div>
-              </ScrollArea>
-            </TabsContent>
-          )}
         </Tabs>
 
         {/* Filter Tags */}
