@@ -23,9 +23,9 @@ export function Layout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex">
+    <div className="h-screen bg-background text-foreground flex overflow-hidden">
       <Sidebar />
-      <main className="flex-1 lg:pl-64 min-h-screen flex flex-col">
+      <main className="flex-1 lg:pl-64 h-screen flex flex-col overflow-hidden">
         {children}
       </main>
     </div>

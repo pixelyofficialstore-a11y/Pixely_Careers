@@ -83,6 +83,7 @@ export default function ChatsPage() {
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [filterTag, setFilterTag] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedDesignerFilter, setSelectedDesignerFilter] = useState<string>("all");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -281,9 +282,9 @@ export default function ChatsPage() {
   if (isLoading) return null;
 
   return (
-    <div className="flex h-screen w-full fixed inset-0 lg:left-64 bg-slate-950">
+    <div className="flex h-full w-full bg-slate-950">
       {/* Left Sidebar - Chat List */}
-      <div className="w-80 min-w-[280px] border-r border-slate-800 flex flex-col bg-slate-950">
+      <div className="w-72 lg:w-80 min-w-[260px] max-w-[320px] border-r border-slate-800 flex flex-col bg-slate-950 flex-shrink-0">
         {/* Header */}
         <div className="p-3 border-b border-slate-800">
           <div className="flex items-center gap-2 mb-3">
@@ -374,10 +375,36 @@ export default function ChatsPage() {
           </TabsContent>
 
           {(isAdmin || isSupport) && (
-            <TabsContent value="designers" className="flex-1 m-0 overflow-hidden">
-              <ScrollArea className="h-full">
+            <TabsContent value="designers" className="flex-1 m-0 overflow-hidden flex flex-col">
+              {/* Designer Filter Dropdown */}
+              <div className="p-2 border-b border-slate-800">
+                <Select
+                  value={selectedDesignerFilter}
+                  onValueChange={setSelectedDesignerFilter}
+                >
+                  <SelectTrigger className="w-full h-9 bg-slate-800 border-slate-700 text-slate-300 text-sm" data-testid="select-designer-filter">
+                    <SelectValue placeholder="Select Designer" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-slate-900 border-slate-700">
+                    <SelectItem value="all" className="text-slate-300 text-sm">All Designers</SelectItem>
+                    <SelectItem value="unassigned" className="text-slate-300 text-sm">Unassigned</SelectItem>
+                    {designers.map(d => (
+                      <SelectItem key={d.id} value={d.id.toString()} className="text-slate-300 text-sm">
+                        {d.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <ScrollArea className="flex-1">
                 <div className="p-2 space-y-3">
-                  {designerGroups.map(group => (
+                  {designerGroups
+                    .filter(group => {
+                      if (selectedDesignerFilter === "all") return true;
+                      if (selectedDesignerFilter === "unassigned") return !group.designer;
+                      return group.designer?.id.toString() === selectedDesignerFilter;
+                    })
+                    .map(group => (
                     <div key={group.designer?.id || "unassigned"}>
                       <div className="flex items-center gap-2 px-2 py-1 mb-1">
                         <div className={cn(
@@ -408,8 +435,12 @@ export default function ChatsPage() {
                       </div>
                     </div>
                   ))}
-                  {designerGroups.length === 0 && (
-                    <p className="text-slate-500 text-center py-8 text-sm">No chats assigned</p>
+                  {designerGroups.filter(group => {
+                    if (selectedDesignerFilter === "all") return true;
+                    if (selectedDesignerFilter === "unassigned") return !group.designer;
+                    return group.designer?.id.toString() === selectedDesignerFilter;
+                  }).length === 0 && (
+                    <p className="text-slate-500 text-center py-8 text-sm">No chats found</p>
                   )}
                 </div>
               </ScrollArea>
@@ -445,7 +476,7 @@ export default function ChatsPage() {
       </div>
 
       {/* Right Panel - Chat Detail */}
-      <div className="flex-1 flex flex-col bg-slate-900 min-w-0">
+      <div className="flex-1 flex flex-col bg-slate-900 min-w-0 overflow-hidden">
         {selectedChat ? (
           <>
             {/* Chat Header - Responsive */}
@@ -525,15 +556,15 @@ export default function ChatsPage() {
                     </DropdownMenuContent>
                   </DropdownMenu>
 
-                  <Button variant="ghost" size="icon" className="text-slate-400 h-8 w-8" onClick={copyPhoneNumber}>
+                  <Button variant="ghost" size="icon" onClick={copyPhoneNumber} data-testid="button-copy-phone">
                     <Copy className="w-4 h-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" className="text-slate-400 h-8 w-8">
+                  <Button variant="ghost" size="icon" className="hidden sm:flex" data-testid="button-external-link">
                     <ExternalLink className="w-4 h-4" />
                   </Button>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="text-slate-400 h-8 w-8">
+                      <Button variant="ghost" size="icon" data-testid="button-more-options">
                         <MoreHorizontal className="w-4 h-4" />
                       </Button>
                     </DropdownMenuTrigger>
