@@ -43,8 +43,28 @@ import {
   Plus,
   Trash2,
   X,
-  XCircle
+  XCircle,
+  MoreVertical,
+  Phone,
+  Copy,
+  Check,
+  MessageSquare,
+  FileText,
+  History
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import {
   Tooltip,
   TooltipContent,
@@ -69,6 +89,9 @@ export default function OrdersPage() {
   const [search, setSearch] = useState("");
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth().toString());
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState<OrderWithServices | null>(null);
+  const [detailsSheetOpen, setDetailsSheetOpen] = useState(false);
+  const [copiedPhone, setCopiedPhone] = useState<number | null>(null);
 
   const { data: orders, isLoading } = useQuery<OrderWithServices[]>({
     queryKey: ["/api/orders"],
@@ -95,8 +118,21 @@ export default function OrdersPage() {
 
   const isAdmin = user?.role === "admin";
   const isSupport = user?.role === "support";
+  const isDesigner = user?.role === "designer";
   const canSeeFinance = isAdmin;
   const canCreateOrder = isAdmin || isSupport;
+  
+  const copyPhone = (orderId: number, phone: string) => {
+    navigator.clipboard.writeText(phone);
+    setCopiedPhone(orderId);
+    toast({ title: "Copied", description: "Phone number copied to clipboard" });
+    setTimeout(() => setCopiedPhone(null), 2000);
+  };
+  
+  const openOrderDetails = (order: OrderWithServices) => {
+    setSelectedOrder(order);
+    setDetailsSheetOpen(true);
+  };
 
   const filteredOrders = orders?.filter(order => {
     const matchesSearch = 
@@ -111,7 +147,11 @@ export default function OrdersPage() {
   });
 
   const monthlyOrders = filteredOrders?.filter(order => {
-    return new Date(order.createdAt!).getMonth().toString() === selectedMonth;
+    const inMonth = new Date(order.createdAt!).getMonth().toString() === selectedMonth;
+    if (isDesigner) {
+      return inMonth && order.assignedToId === user?.id;
+    }
+    return inMonth;
   });
 
   const getStatusBadge = (status: string) => {
@@ -208,11 +248,11 @@ export default function OrdersPage() {
           </div>
           <div className="glass-panel p-4 rounded-xl border border-slate-800 flex items-center gap-3">
             <div className="p-2 bg-green-500/10 rounded-lg text-green-500"><TrendingUp className="w-5 h-5" /></div>
-            <div><p className="text-xs text-slate-500">Collected</p><p className="font-bold text-white">₨{((monthlyOrders?.reduce((acc, o) => acc + (o.amountPaid || 0), 0) || 0) / 100).toLocaleString()}</p></div>
+            <div><p className="text-xs text-slate-500">Collected</p><p className="font-bold text-white">₨{((monthlyOrders?.reduce((acc, o) => acc + (o.advanceAmount || 0), 0) || 0) / 100).toLocaleString()}</p></div>
           </div>
           <div className="glass-panel p-4 rounded-xl border border-slate-800 flex items-center gap-3">
             <div className="p-2 bg-red-500/10 rounded-lg text-red-500"><AlertCircle className="w-5 h-5" /></div>
-            <div><p className="text-xs text-slate-500">Remaining</p><p className="font-bold text-white">₨{((monthlyOrders?.reduce((acc, o) => acc + ((o.totalPrice || 0) - (o.amountPaid || 0)), 0) || 0) / 100).toLocaleString()}</p></div>
+            <div><p className="text-xs text-slate-500">Remaining</p><p className="font-bold text-white">₨{((monthlyOrders?.reduce((acc, o) => acc + (o.remainingAmount || 0), 0) || 0) / 100).toLocaleString()}</p></div>
           </div>
         </div>
       )}
@@ -220,9 +260,7 @@ export default function OrdersPage() {
       <Tabs defaultValue="today" className="w-full">
         <TabsList className="bg-slate-900 border border-slate-800 p-1 mb-6">
           <TabsTrigger value="today" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white" data-testid="tab-today-orders">Today's Orders</TabsTrigger>
-          {(isAdmin || isSupport) && (
-            <TabsTrigger value="monthly" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white" data-testid="tab-monthly-orders">Monthly Orders</TabsTrigger>
-          )}
+          <TabsTrigger value="monthly" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white" data-testid="tab-monthly-orders">Monthly Orders</TabsTrigger>
         </TabsList>
 
         <TabsContent value="today">
@@ -237,6 +275,7 @@ export default function OrdersPage() {
                   <TableHead className="text-slate-400">Order ID</TableHead>
                   <TableHead className="text-slate-400">Date Placed</TableHead>
                   <TableHead className="text-slate-400">Client</TableHead>
+                  <TableHead className="text-slate-400">Contact</TableHead>
                   <TableHead className="text-slate-400">Services</TableHead>
                   <TableHead className="text-slate-400">Designer</TableHead>
                   <TableHead className="text-slate-400">Status</TableHead>
@@ -271,6 +310,33 @@ export default function OrdersPage() {
                       <TableCell className="font-mono text-xs text-blue-400">{order.orderNumber}</TableCell>
                       <TableCell className="text-slate-400 text-xs">{format(new Date(order.createdAt!), "MMM dd, yyyy")}</TableCell>
                       <TableCell className="text-white font-medium">{order.clientName}</TableCell>
+                      <TableCell>
+                        {order.clientPhone ? (
+                          <div className="flex items-center gap-1">
+                            <span className="text-slate-300 text-sm">{order.clientPhone}</span>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 text-slate-400 hover:text-white"
+                              onClick={() => copyPhone(order.id, order.clientPhone!)}
+                              data-testid={`button-copy-phone-${order.id}`}
+                            >
+                              {copiedPhone === order.id ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
+                            </Button>
+                            <a
+                              href={`https://wa.me/${order.clientPhone.replace(/\D/g, '')}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="h-6 w-6 flex items-center justify-center rounded-md text-green-500 hover:bg-green-500/10"
+                              data-testid={`button-whatsapp-${order.id}`}
+                            >
+                              <Phone className="w-3 h-3" />
+                            </a>
+                          </div>
+                        ) : (
+                          <span className="text-slate-500 text-sm">-</span>
+                        )}
+                      </TableCell>
                       <TableCell className="text-slate-300 text-sm">{getServicesDisplay(order.services)}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
@@ -318,11 +384,11 @@ export default function OrdersPage() {
                       </TableCell>
                       {canSeeFinance && (
                         <TableCell className="text-red-400 font-medium">
-                          ₨{(((order.totalPrice || 0) - (order.amountPaid || 0)) / 100).toLocaleString()}
+                          ₨{((order.remainingAmount || 0) / 100).toLocaleString()}
                         </TableCell>
                       )}
                       <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
+                        <div className="flex justify-end gap-1">
                           {(isAdmin || isSupport) && (
                             <Dialog>
                               <DialogTrigger asChild>
@@ -348,18 +414,36 @@ export default function OrdersPage() {
                               </DialogContent>
                             </Dialog>
                           )}
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-white" data-testid={`button-view-${order.id}`}><Eye className="w-4 h-4" /></Button>
-                          {canDelete && order.status !== 'canceled' && (
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-8 w-8 text-red-400 hover:text-red-300" 
-                              onClick={() => updateOrderMutation.mutate({ id: order.id, updates: { status: 'canceled' } })}
-                              data-testid={`button-cancel-${order.id}`}
-                            >
-                              <XCircle className="w-4 h-4" />
-                            </Button>
-                          )}
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-white" data-testid={`button-menu-${order.id}`}>
+                                <MoreVertical className="w-4 h-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="bg-slate-900 border-slate-800">
+                              <DropdownMenuItem onClick={() => openOrderDetails(order)} className="text-slate-300 hover:text-white" data-testid={`menu-view-details-${order.id}`}>
+                                <FileText className="w-4 h-4 mr-2" />
+                                View Details
+                              </DropdownMenuItem>
+                              {order.linkedChatId && (
+                                <DropdownMenuItem className="text-slate-300 hover:text-white">
+                                  <MessageSquare className="w-4 h-4 mr-2" />
+                                  Open Chat
+                                </DropdownMenuItem>
+                              )}
+                              <DropdownMenuSeparator className="bg-slate-800" />
+                              {canDelete && order.status !== 'canceled' && (
+                                <DropdownMenuItem 
+                                  onClick={() => updateOrderMutation.mutate({ id: order.id, updates: { status: 'canceled' } })}
+                                  className="text-red-400 hover:text-red-300"
+                                  data-testid={`menu-cancel-${order.id}`}
+                                >
+                                  <XCircle className="w-4 h-4 mr-2" />
+                                  Cancel Order
+                                </DropdownMenuItem>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -406,21 +490,65 @@ export default function OrdersPage() {
                   <TableHead className="text-slate-400">Date Placed</TableHead>
                   <TableHead className="text-slate-400">Order ID</TableHead>
                   <TableHead className="text-slate-400">Client</TableHead>
+                  <TableHead className="text-slate-400">Contact</TableHead>
                   <TableHead className="text-slate-400">Services</TableHead>
-                  <TableHead className="text-slate-400">Designer</TableHead>
+                  {!isDesigner && <TableHead className="text-slate-400">Designer</TableHead>}
                   <TableHead className="text-slate-400">Status</TableHead>
                   <TableHead className="text-slate-400">Payment</TableHead>
                   {canSeeFinance && <TableHead className="text-slate-400">Remaining</TableHead>}
+                  <TableHead className="text-right text-slate-400">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {monthlyOrders?.map((order) => (
+                {monthlyOrders?.map((order) => {
+                  const getMonthlyStatusOptions = () => {
+                    if (isAdmin || isSupport) {
+                      return [
+                        { value: "new", label: "New" },
+                        { value: "working", label: "Working" },
+                        { value: "ready", label: "Ready" },
+                        { value: "delivered", label: "Delivered" },
+                        { value: "canceled", label: "Canceled" },
+                      ];
+                    }
+                    if (order.status === 'new') return [{ value: "new", label: "New" }, { value: "working", label: "Working" }];
+                    if (order.status === 'working') return [{ value: "working", label: "Working" }, { value: "ready", label: "Ready" }];
+                    if (order.status === 'ready') return [{ value: "ready", label: "Ready" }, { value: "delivered", label: "Delivered" }];
+                    return [{ value: order.status, label: order.status.charAt(0).toUpperCase() + order.status.slice(1) }];
+                  };
+                  
+                  return (
                   <TableRow key={order.id} className="border-slate-800" data-testid={`row-monthly-order-${order.id}`}>
                     <TableCell className="text-slate-400 text-xs">{format(new Date(order.createdAt!), "MMM dd")}</TableCell>
                     <TableCell className="font-mono text-xs text-blue-400">{order.orderNumber}</TableCell>
                     <TableCell className="text-white font-medium">{order.clientName}</TableCell>
+                    <TableCell>
+                      {order.clientPhone ? (
+                        <div className="flex items-center gap-1">
+                          <span className="text-slate-300 text-sm">{order.clientPhone}</span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-slate-400 hover:text-white"
+                            onClick={() => copyPhone(order.id, order.clientPhone!)}
+                          >
+                            {copiedPhone === order.id ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
+                          </Button>
+                          <a
+                            href={`https://wa.me/${order.clientPhone.replace(/\D/g, '')}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="h-6 w-6 flex items-center justify-center rounded-md text-green-500 hover:bg-green-500/10"
+                          >
+                            <Phone className="w-3 h-3" />
+                          </a>
+                        </div>
+                      ) : (
+                        <span className="text-slate-500 text-sm">-</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-slate-300 text-sm">{getServicesDisplay(order.services)}</TableCell>
-                    <TableCell className="text-slate-300">{order.assignee?.name || "Unassigned"}</TableCell>
+                    {!isDesigner && <TableCell className="text-slate-300">{order.assignee?.name || "Unassigned"}</TableCell>}
                     <TableCell>
                       <Select 
                         defaultValue={order.status} 
@@ -430,11 +558,9 @@ export default function OrdersPage() {
                           <SelectValue>{getStatusBadge(order.status)}</SelectValue>
                         </SelectTrigger>
                         <SelectContent className="bg-slate-900 border-slate-800">
-                          <SelectItem value="new">New</SelectItem>
-                          <SelectItem value="working">Working</SelectItem>
-                          <SelectItem value="ready">Ready</SelectItem>
-                          <SelectItem value="delivered">Delivered</SelectItem>
-                          <SelectItem value="canceled">Canceled</SelectItem>
+                          {getMonthlyStatusOptions().map(opt => (
+                            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </TableCell>
@@ -458,11 +584,39 @@ export default function OrdersPage() {
                     </TableCell>
                     {canSeeFinance && (
                       <TableCell className="text-red-400 font-medium">
-                        ₨{(((order.totalPrice || 0) - (order.amountPaid || 0)) / 100).toLocaleString()}
+                        ₨{(((order.totalPrice || 0) - (order.advanceAmount || 0)) / 100).toLocaleString()}
                       </TableCell>
                     )}
+                    <TableCell className="text-right">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-white">
+                            <MoreVertical className="w-4 h-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="bg-slate-900 border-slate-800">
+                          <DropdownMenuItem onClick={() => openOrderDetails(order)} className="text-slate-300 hover:text-white">
+                            <FileText className="w-4 h-4 mr-2" />
+                            View Details
+                          </DropdownMenuItem>
+                          {(isAdmin || isSupport) && order.status !== 'canceled' && (
+                            <>
+                              <DropdownMenuSeparator className="bg-slate-800" />
+                              <DropdownMenuItem 
+                                onClick={() => updateOrderMutation.mutate({ id: order.id, updates: { status: 'canceled' } })}
+                                className="text-red-400 hover:text-red-300"
+                              >
+                                <XCircle className="w-4 h-4 mr-2" />
+                                Cancel Order
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
                 {(!monthlyOrders || monthlyOrders.length === 0) && (
                   <TableRow className="border-slate-800">
                     <TableCell colSpan={10} className="text-center text-slate-500 py-8">
@@ -475,6 +629,162 @@ export default function OrdersPage() {
           </div>
         </TabsContent>
       </Tabs>
+
+      <Sheet open={detailsSheetOpen} onOpenChange={setDetailsSheetOpen}>
+        <SheetContent className="bg-slate-900 border-slate-800 w-full sm:max-w-xl overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle className="text-white font-display flex items-center gap-2">
+              <FileText className="w-5 h-5" />
+              Order Details
+            </SheetTitle>
+          </SheetHeader>
+          {selectedOrder && (
+            <div className="mt-6 space-y-6">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-2xl font-bold text-blue-400 font-mono">{selectedOrder.orderNumber}</span>
+                  {getStatusBadge(selectedOrder.status)}
+                </div>
+                <p className="text-slate-400 text-sm">Created {format(new Date(selectedOrder.createdAt!), "MMMM dd, yyyy 'at' h:mm a")}</p>
+              </div>
+
+              <div className="space-y-3 p-4 bg-slate-950 rounded-lg border border-slate-800">
+                <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Client Information</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-xs text-slate-500">Name</p>
+                    <p className="text-white font-medium">{selectedOrder.clientName}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500">Contact</p>
+                    {selectedOrder.clientPhone ? (
+                      <div className="flex items-center gap-2">
+                        <p className="text-white">{selectedOrder.clientPhone}</p>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-slate-400 hover:text-white"
+                          onClick={() => copyPhone(selectedOrder.id, selectedOrder.clientPhone!)}
+                        >
+                          {copiedPhone === selectedOrder.id ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
+                        </Button>
+                      </div>
+                    ) : (
+                      <p className="text-slate-500">-</p>
+                    )}
+                  </div>
+                  {selectedOrder.clientEmail && (
+                    <div className="col-span-2">
+                      <p className="text-xs text-slate-500">Email</p>
+                      <p className="text-white">{selectedOrder.clientEmail}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-3 p-4 bg-slate-950 rounded-lg border border-slate-800">
+                <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Services</h4>
+                <div className="space-y-2">
+                  {selectedOrder.services.map((service, idx) => (
+                    <div key={idx} className="flex justify-between items-center py-2 border-b border-slate-800 last:border-0">
+                      <div>
+                        <p className="text-white">{service.serviceType}</p>
+                        {service.instructions && <p className="text-xs text-slate-500">{service.instructions}</p>}
+                      </div>
+                      <Badge variant="outline" className="text-slate-300">x{service.quantity}</Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-3 p-4 bg-slate-950 rounded-lg border border-slate-800">
+                <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Assignment</h4>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-lg text-slate-400">
+                    {selectedOrder.assignee?.name?.charAt(0) || "?"}
+                  </div>
+                  <div>
+                    <p className="text-white font-medium">{selectedOrder.assignee?.name || "Unassigned"}</p>
+                    <p className="text-xs text-slate-500">{selectedOrder.assignee?.title || "Designer"}</p>
+                  </div>
+                </div>
+              </div>
+
+              {canSeeFinance && (
+                <div className="space-y-3 p-4 bg-slate-950 rounded-lg border border-slate-800">
+                  <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Payment</h4>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <p className="text-xs text-slate-500">Total</p>
+                      <p className="text-white font-medium">₨{((selectedOrder.totalPrice || 0) / 100).toLocaleString()}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500">Advance</p>
+                      <p className="text-green-400 font-medium">₨{((selectedOrder.advanceAmount || 0) / 100).toLocaleString()}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500">Remaining</p>
+                      <p className="text-red-400 font-medium">₨{((selectedOrder.remainingAmount || 0) / 100).toLocaleString()}</p>
+                    </div>
+                  </div>
+                  <div className="pt-2 border-t border-slate-800">
+                    <Badge variant="outline" className={selectedOrder.paymentStatus === 'paid' ? "text-green-500 border-green-500/30" : "text-yellow-500 border-yellow-500/30"}>
+                      {selectedOrder.paymentStatus === 'paid' ? "Paid" : "Payment Pending"}
+                    </Badge>
+                  </div>
+                </div>
+              )}
+
+              {(selectedOrder.campaign || selectedOrder.adSet || selectedOrder.creative) && (
+                <div className="space-y-3 p-4 bg-slate-950 rounded-lg border border-slate-800">
+                  <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Marketing Data</h4>
+                  <div className="space-y-2">
+                    {selectedOrder.campaign && (
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Campaign</span>
+                        <span className="text-white">{selectedOrder.campaign}</span>
+                      </div>
+                    )}
+                    {selectedOrder.adSet && (
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Ad Set</span>
+                        <span className="text-white">{selectedOrder.adSet}</span>
+                      </div>
+                    )}
+                    {selectedOrder.creative && (
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Creative</span>
+                        <span className="text-white">{selectedOrder.creative}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {selectedOrder.notes && (
+                <div className="space-y-3 p-4 bg-slate-950 rounded-lg border border-slate-800">
+                  <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Notes</h4>
+                  <p className="text-slate-300 text-sm whitespace-pre-wrap">{selectedOrder.notes}</p>
+                </div>
+              )}
+
+              {selectedOrder.internalNotes && (isAdmin || isSupport) && (
+                <div className="space-y-3 p-4 bg-slate-950 rounded-lg border border-slate-800">
+                  <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Internal Notes</h4>
+                  <p className="text-slate-300 text-sm whitespace-pre-wrap">{selectedOrder.internalNotes}</p>
+                </div>
+              )}
+
+              {selectedOrder.readyDate && (
+                <div className="text-xs text-slate-500 flex items-center gap-1">
+                  <History className="w-3 h-3" />
+                  Ready on {format(new Date(selectedOrder.readyDate), "MMM dd, yyyy")}
+                </div>
+              )}
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
@@ -486,7 +796,7 @@ function CreateOrderForm({ designers, onSuccess }: { designers: User[]; onSucces
   const [assignedToId, setAssignedToId] = useState("");
   const [paymentStatus, setPaymentStatus] = useState("pending");
   const [totalBill, setTotalBill] = useState("");
-  const [amountPaid, setAmountPaid] = useState("");
+  const [advanceAmount, setAdvanceAmount] = useState("");
   const [campaign, setCampaign] = useState("");
   const [adSet, setAdSet] = useState("");
   const [creative, setCreative] = useState("");
@@ -540,13 +850,18 @@ function CreateOrderForm({ designers, onSuccess }: { designers: User[]; onSucces
       return;
     }
 
+    const totalPriceValue = totalBill ? Math.round(parseFloat(totalBill) * 100) : 0;
+    const advanceValue = advanceAmount ? Math.round(parseFloat(advanceAmount) * 100) : 0;
+    const remainingValue = totalPriceValue - advanceValue;
+
     createMutation.mutate({
       clientName: clientName.trim(),
       clientPhone: clientPhone.trim(),
       assignedToId: assignedToId ? parseInt(assignedToId) : null,
       paymentStatus,
-      totalPrice: totalBill ? Math.round(parseFloat(totalBill) * 100) : 0,
-      amountPaid: amountPaid ? Math.round(parseFloat(amountPaid) * 100) : 0,
+      totalPrice: totalPriceValue,
+      advanceAmount: advanceValue,
+      remainingAmount: remainingValue,
       campaign: campaign.trim() || null,
       adSet: adSet.trim() || null,
       creative: creative.trim() || null,
@@ -676,22 +991,22 @@ function CreateOrderForm({ designers, onSuccess }: { designers: User[]; onSucces
             />
           </div>
           <div className="space-y-2">
-            <Label className="text-slate-300">Amount Paid (₨)</Label>
+            <Label className="text-slate-300">Advance Paid (₨)</Label>
             <Input 
               type="number"
               min="0"
               step="0.01"
-              value={amountPaid} 
-              onChange={(e) => setAmountPaid(e.target.value)} 
+              value={advanceAmount} 
+              onChange={(e) => setAdvanceAmount(e.target.value)} 
               className="bg-slate-950 border-slate-800 text-white"
               placeholder="0.00"
-              data-testid="input-amount-paid"
+              data-testid="input-advance-amount"
             />
           </div>
           <div className="space-y-2">
             <Label className="text-slate-300">Remaining</Label>
             <div className="h-9 flex items-center px-3 bg-slate-950 border border-slate-800 rounded-md text-white">
-              ₨{((parseFloat(totalBill) || 0) - (parseFloat(amountPaid) || 0)).toFixed(2)}
+              ₨{((parseFloat(totalBill) || 0) - (parseFloat(advanceAmount) || 0)).toFixed(2)}
             </div>
           </div>
         </div>

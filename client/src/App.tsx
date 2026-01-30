@@ -13,6 +13,7 @@ import { Loader2 } from "lucide-react";
 import OrdersPage from "@/pages/OrdersPage";
 import TeamPage from "@/pages/TeamPage";
 import AnalyticsPage from "@/pages/AnalyticsPage";
+import ChatsPage from "@/pages/ChatsPage";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -55,7 +56,7 @@ function Router() {
       <Route path="/chats">
         <ProtectedRoute>
           <Layout>
-            <div className="p-8"><h1 className="text-2xl text-white">Chats Page (Coming Soon)</h1></div>
+            <ChatsPage />
           </Layout>
         </ProtectedRoute>
       </Route>

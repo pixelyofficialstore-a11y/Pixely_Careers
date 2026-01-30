@@ -92,11 +92,12 @@ export default function DashboardPage() {
   const readyOrders = orders?.filter(o => o.status === 'ready') || [];
   const deliveredOrders = orders?.filter(o => o.status === 'delivered') || [];
   
-  // Finance calculations (Admin only)
-  const totalCollected = orders?.reduce((acc, o) => acc + (o.amountPaid || 0), 0) || 0;
+  // Finance calculations (Admin only) - using new advance/remaining fields
+  const totalCollected = orders?.reduce((acc, o) => acc + (o.advanceAmount || 0), 0) || 0;
   const totalBilled = orders?.reduce((acc, o) => acc + (o.totalPrice || 0), 0) || 0;
-  const outstandingBalance = totalBilled - totalCollected;
-  const monthlyCollected = monthlyOrders.reduce((acc, o) => acc + (o.amountPaid || 0), 0);
+  const outstandingBalance = orders?.reduce((acc, o) => acc + (o.remainingAmount || 0), 0) || 0;
+  const monthlyCollected = monthlyOrders.reduce((acc, o) => acc + (o.advanceAmount || 0), 0);
+  const monthlyRemaining = monthlyOrders.reduce((acc, o) => acc + (o.remainingAmount || 0), 0);
 
   // Ready-based metrics (for Admin reports)
   const readyThisMonth = orders?.filter(o => o.readyDate && new Date(o.readyDate) >= monthStart) || [];
@@ -337,11 +338,22 @@ export default function DashboardPage() {
             </div>
             <div className="flex items-center justify-between p-4 bg-slate-950/50 rounded-xl border border-slate-800">
               <div className="flex items-center gap-3">
+                <div className="p-2 bg-red-500/10 rounded-lg text-red-500">
+                  <Clock className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-xs text-slate-400">Monthly Remaining</p>
+                  <p className="font-bold text-red-400" data-testid="stat-monthly-remaining">₨{(monthlyRemaining / 100).toLocaleString()}</p>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center justify-between p-4 bg-slate-950/50 rounded-xl border border-slate-800">
+              <div className="flex items-center gap-3">
                 <div className="p-2 bg-orange-500/10 rounded-lg text-orange-500">
                   <Clock className="w-5 h-5" />
                 </div>
                 <div>
-                  <p className="text-xs text-slate-400">Outstanding Balance</p>
+                  <p className="text-xs text-slate-400">Total Outstanding</p>
                   <p className="font-bold text-white" data-testid="stat-outstanding">₨{(outstandingBalance / 100).toLocaleString()}</p>
                 </div>
               </div>

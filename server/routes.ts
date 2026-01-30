@@ -148,7 +148,8 @@ export async function registerRoutes(
     const sanitizedOrders = orders.map(o => ({
       ...o,
       totalPrice: user.role === 'admin' ? o.totalPrice : undefined,
-      amountPaid: user.role === 'admin' ? o.amountPaid : undefined,
+      advanceAmount: user.role === 'admin' ? o.advanceAmount : undefined,
+      remainingAmount: user.role === 'admin' ? o.remainingAmount : undefined,
     }));
 
     res.json(sanitizedOrders);
@@ -227,7 +228,8 @@ export async function registerRoutes(
     const sanitized = {
       ...order,
       totalPrice: user.role === 'admin' ? order.totalPrice : undefined,
-      amountPaid: user.role === 'admin' ? order.amountPaid : undefined,
+      advanceAmount: user.role === 'admin' ? order.advanceAmount : undefined,
+      remainingAmount: user.role === 'admin' ? order.remainingAmount : undefined,
     };
 
     res.json(sanitized);
@@ -349,6 +351,48 @@ export async function registerRoutes(
     res.json(stats);
   });
 
+  // Shortcuts
+  app.get(api.shortcuts.list.path, requireAuth, async (req, res) => {
+    const shortcuts = await storage.getShortcuts();
+    res.json(shortcuts);
+  });
+
+  // Chat messages endpoint
+  app.get("/api/chats/:id/messages", requireAuth, async (req, res) => {
+    const chatId = Number(req.params.id);
+    const user = req.user as User;
+    
+    const chat = await storage.getChat(chatId);
+    if (!chat) return res.sendStatus(404);
+    
+    if (user.role === 'designer' && chat.assignedToId !== user.id) {
+      return res.sendStatus(403);
+    }
+    
+    const messages = await storage.getChatMessages(chatId);
+    res.json(messages);
+  });
+
+  // Update chat endpoint
+  app.patch("/api/chats/:id", requireAuth, async (req, res) => {
+    const chatId = Number(req.params.id);
+    const updates = req.body;
+    const user = req.user as User;
+    
+    const chat = await storage.getChat(chatId);
+    if (!chat) return res.sendStatus(404);
+    
+    // Only admin/support can update chat assignment and linking
+    if (user.role === 'designer') {
+      const allowedUpdates = ['tags'];
+      const keys = Object.keys(updates);
+      if (keys.some(k => !allowedUpdates.includes(k))) return res.sendStatus(403);
+    }
+    
+    const updated = await storage.updateChat(chatId, updates);
+    res.json(updated);
+  });
+
   // === SEED DATA ===
   await seedDatabase();
 
@@ -400,7 +444,8 @@ async function seedDatabase() {
     priority: "normal",
     assignedToId: designer.id,
     totalPrice: 1500000, // PKR 15,000
-    amountPaid: 1000000, // PKR 10,000
+    advanceAmount: 1000000, // PKR 10,000 advance
+    remainingAmount: 500000, // PKR 5,000 remaining
     paymentStatus: "pending",
     orderNumber: await storage.generateOrderNumber(),
     createdById: admin.id,
@@ -412,7 +457,8 @@ async function seedDatabase() {
     status: "new",
     priority: "high",
     totalPrice: 2000000, // PKR 20,000
-    amountPaid: 0,
+    advanceAmount: 0,
+    remainingAmount: 2000000,
     paymentStatus: "pending",
     orderNumber: await storage.generateOrderNumber(),
     createdById: support.id,
@@ -445,5 +491,31 @@ async function seedDatabase() {
   
   await storage.createMessage(chat2.id, null, "client", "I'm interested in your services.");
 
+  // Create Message Shortcuts
+  await seedMessageShortcuts();
+
   console.log("Database seeded!");
+}
+
+async function seedMessageShortcuts() {
+  const { messageShortcuts } = await import("@shared/schema");
+  const existingShortcuts = await db.select().from(messageShortcuts);
+  if (existingShortcuts.length > 0) return;
+
+  const shortcuts = [
+    { command: "payment", content: "Thank you for your order! Please complete the payment to proceed. You can send the payment to our JazzCash/Easypaisa account: 0300-1234567." },
+    { command: "ready", content: "Great news! Your order is ready. Please review the attached files and let us know if you need any changes." },
+    { command: "thanks", content: "Thank you for choosing Pixely Careers! We appreciate your business. Please don't hesitate to reach out if you need anything else." },
+    { command: "changes", content: "We've received your change request and will work on it shortly. Please allow 24-48 hours for the revisions." },
+    { command: "welcome", content: "Welcome to Pixely Careers! I'm here to assist you with our CV and LinkedIn optimization services. How can I help you today?" },
+    { command: "followup", content: "Hi! Just following up on your order. Is there anything you'd like us to update or any questions we can answer?" },
+  ];
+
+  for (const shortcut of shortcuts) {
+    await db.insert(messageShortcuts).values({
+      command: shortcut.command,
+      content: shortcut.content,
+      isActive: true,
+    });
+  }
 }

@@ -103,3 +103,26 @@ All monetary values displayed in PKR (₨), stored as integers (cents) in the da
 - Analytics page (Admin-only) with two modules:
   - Designer Performance: tracks completions based on readyDate (Working→Ready transitions)
   - Marketing Analytics: Campaign → Ad Set → Creative hierarchy breakdown
+
+### Chats Module (January 30, 2026)
+- Full chat UI implemented with chat list sidebar and messaging interface
+- Tab navigation: All Chats, New (with unread count), By Designer grouping
+- Search functionality to filter by client name or phone number
+- Message shortcuts system with 6 default templates (type "/" to access)
+- Tags support for chats: New, Changes, Satisfied, Issues
+- Role-based visibility: Admin/Support see all chats, Designer sees only assigned
+- WhatsApp integration ready (awaiting API credentials)
+- Send messages via /api/chats/:id/messages endpoint
+
+### Finance Updates (January 30, 2026)
+- Replaced single amountPaid field with advanceAmount and remainingAmount split
+- Dashboard now shows: Total Collected, Monthly Collection, Monthly Remaining, Total Outstanding
+- Finance fields hidden from non-admin users via API sanitization
+- All monetary values stored as integers (PKR paisa) and displayed in PKR (₨)
+
+### Key Database Tables
+- **chats**: WhatsApp-ready chat records with tags, assignment, and linking to orders
+- **messages**: Chat messages with file attachment support
+- **message_shortcuts**: Quick message templates for support staff
+- **activity_logs**: Track all changes to orders and chats (schema ready)
+- **payment_verifications**: Screenshot upload and admin approval workflow (schema ready)

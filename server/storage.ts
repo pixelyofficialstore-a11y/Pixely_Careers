@@ -1,7 +1,7 @@
 import { 
-  users, orders, chats, messages, notifications, orderServices,
+  users, orders, chats, messages, notifications, orderServices, messageShortcuts,
   type User, type InsertUser, type Order, type InsertOrder, type Chat, type InsertChat, type Message, type Notification,
-  type OrderService, type InsertOrderService, type OrderWithServices
+  type OrderService, type InsertOrderService, type OrderWithServices, type MessageShortcut
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, sql } from "drizzle-orm";
@@ -34,6 +34,10 @@ export interface IStorage {
   getNotifications(userId: number): Promise<Notification[]>;
   markNotificationRead(id: number): Promise<Notification>;
   createNotification(userId: number, type: string, message: string, relatedId?: number, relatedType?: string): Promise<Notification>;
+
+  // Message Shortcuts
+  getShortcuts(): Promise<MessageShortcut[]>;
+  getChatMessages(chatId: number): Promise<Message[]>;
 
   // Stats
   getStats(): Promise<any>;
@@ -144,7 +148,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createChat(chat: InsertChat): Promise<Chat> {
-    const [newChat] = await db.insert(chats).values(chat).returning();
+    const [newChat] = await db.insert(chats).values(chat as any).returning();
     return newChat;
   }
 
@@ -197,6 +201,17 @@ export class DatabaseStorage implements IStorage {
     return notification;
   }
 
+  // Message Shortcuts
+  async getShortcuts(): Promise<MessageShortcut[]> {
+    return await db.select().from(messageShortcuts).where(eq(messageShortcuts.isActive, true));
+  }
+
+  async getChatMessages(chatId: number): Promise<Message[]> {
+    return await db.select().from(messages)
+      .where(eq(messages.chatId, chatId))
+      .orderBy(messages.createdAt);
+  }
+
   // Stats
   async getStats(): Promise<any> {
     const allOrders = await db.select().from(orders);
@@ -221,8 +236,8 @@ export class DatabaseStorage implements IStorage {
       canceled: allOrders.filter(o => o.status === 'canceled').length,
     };
 
-    const totalRevenue = allOrders.reduce((acc, curr) => acc + (curr.amountPaid || 0), 0);
-    const pendingPayments = allOrders.reduce((acc, curr) => acc + ((curr.totalPrice || 0) - (curr.amountPaid || 0)), 0);
+    const totalRevenue = allOrders.reduce((acc, curr) => acc + (curr.advanceAmount || 0), 0);
+    const pendingPayments = allOrders.reduce((acc, curr) => acc + (curr.remainingAmount || 0), 0);
 
     const chatStats = {
       new: allChats.filter(c => c.status === 'new').length,
@@ -233,7 +248,7 @@ export class DatabaseStorage implements IStorage {
       orders: orderStats,
       finance: {
         totalRevenue,
-        monthlyRevenue: monthlyOrders.reduce((acc, curr) => acc + (curr.amountPaid || 0), 0),
+        monthlyRevenue: monthlyOrders.reduce((acc, curr) => acc + (curr.advanceAmount || 0), 0),
         pendingPayments,
       },
       chats: chatStats

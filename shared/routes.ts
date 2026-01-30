@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { insertUserSchema, insertOrderSchema, insertChatSchema, insertMessageSchema, users, orders, chats, messages, notifications } from "./schema";
+import { insertUserSchema, insertOrderSchema, insertChatSchema, insertMessageSchema, users, orders, chats, messages, notifications, messageShortcuts } from "./schema";
 
 export const errorSchemas = {
   validation: z.object({
@@ -173,9 +173,9 @@ export const api = {
             delivered: z.number(),
           }),
           finance: z.object({
-            totalRevenue: z.number().optional(), // Admin only
-            monthlyRevenue: z.number().optional(), // Admin only
-            pendingPayments: z.number().optional(), // Admin only
+            totalRevenue: z.number().optional(),
+            monthlyRevenue: z.number().optional(),
+            pendingPayments: z.number().optional(),
           }).optional(),
           chats: z.object({
             new: z.number(),
@@ -184,7 +184,16 @@ export const api = {
         }),
       },
     },
-  }
+  },
+  shortcuts: {
+    list: {
+      method: "GET" as const,
+      path: "/api/shortcuts",
+      responses: {
+        200: z.array(z.custom<typeof messageShortcuts.$inferSelect>()),
+      },
+    },
+  },
 };
 
 export function buildUrl(path: string, params?: Record<string, string | number>): string {
