@@ -387,7 +387,6 @@ export default function ChatsPage() {
                   </SelectTrigger>
                   <SelectContent className="bg-slate-900 border-slate-700">
                     <SelectItem value="all" className="text-slate-300 text-sm">All Designers</SelectItem>
-                    <SelectItem value="unassigned" className="text-slate-300 text-sm">Unassigned</SelectItem>
                     {designers.map(d => (
                       <SelectItem key={d.id} value={d.id.toString()} className="text-slate-300 text-sm">
                         {d.name}
@@ -401,7 +400,6 @@ export default function ChatsPage() {
                   {designerGroups
                     .filter(group => {
                       if (selectedDesignerFilter === "all") return true;
-                      if (selectedDesignerFilter === "unassigned") return !group.designer;
                       return group.designer?.id.toString() === selectedDesignerFilter;
                     })
                     .map(group => (
