@@ -12,44 +12,36 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   Search,
   Send,
   Phone,
-  MoreVertical,
+  MoreHorizontal,
   Paperclip,
-  Tag,
-  UserPlus,
   MessageSquare,
   Users,
-  Clock,
-  Check,
-  CheckCheck,
-  Link2,
+  ExternalLink,
   Copy,
-  FileText,
-  X,
+  Share2,
+  Smile,
+  Mic,
+  ChevronDown,
+  CheckCircle,
 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { format } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Chat, Message, User, MessageShortcut } from "@shared/schema";
+import { cn } from "@/lib/utils";
 
 type ChatWithDetails = Chat & {
   messages?: Message[];
@@ -58,6 +50,31 @@ type ChatWithDetails = Chat & {
 
 const CHAT_TAGS = ["New", "Changes", "Satisfied", "Issues"];
 
+const TAG_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
+  "New": { bg: "bg-blue-500/20", text: "text-blue-400", dot: "bg-blue-500" },
+  "New Inquiry": { bg: "bg-blue-500/20", text: "text-blue-400", dot: "bg-blue-500" },
+  "Changes": { bg: "bg-yellow-500/20", text: "text-yellow-400", dot: "bg-yellow-500" },
+  "Satisfied": { bg: "bg-green-500/20", text: "text-green-400", dot: "bg-green-500" },
+  "Issues": { bg: "bg-red-500/20", text: "text-red-400", dot: "bg-red-500" },
+  "Issue": { bg: "bg-red-500/20", text: "text-red-400", dot: "bg-red-500" },
+  "Pending Payment": { bg: "bg-emerald-500/20", text: "text-emerald-400", dot: "bg-emerald-500" },
+  "Urgent": { bg: "bg-orange-500/20", text: "text-orange-400", dot: "bg-orange-500" },
+};
+
+const AVATAR_COLORS = [
+  "bg-purple-600",
+  "bg-blue-600",
+  "bg-green-600",
+  "bg-orange-600",
+  "bg-pink-600",
+  "bg-cyan-600",
+];
+
+function getAvatarColor(name: string) {
+  const index = name.charCodeAt(0) % AVATAR_COLORS.length;
+  return AVATAR_COLORS[index];
+}
+
 export default function ChatsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -65,7 +82,9 @@ export default function ChatsPage() {
   const [selectedChat, setSelectedChat] = useState<ChatWithDetails | null>(null);
   const [messageText, setMessageText] = useState("");
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const [filterTag, setFilterTag] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const isAdmin = user?.role === "admin";
   const isSupport = user?.role === "support";
@@ -88,6 +107,8 @@ export default function ChatsPage() {
     queryKey: ["/api/shortcuts"],
   });
 
+  const designers = teamMembers?.filter(u => u.role === "designer") || [];
+
   const sendMessageMutation = useMutation({
     mutationFn: async ({ chatId, content }: { chatId: number; content: string }) => {
       return apiRequest("POST", `/api/chats/${chatId}/messages`, { content });
@@ -96,6 +117,7 @@ export default function ChatsPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/chats", selectedChat?.id, "messages"] });
       queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
       setMessageText("");
+      setShowShortcuts(false);
     },
   });
 
@@ -118,18 +140,26 @@ export default function ChatsPage() {
     sendMessageMutation.mutate({ chatId: selectedChat.id, content: messageText });
   };
 
-  const handleShortcut = (command: string) => {
-    const shortcut = shortcuts?.find(s => s.command === command);
-    if (shortcut) {
-      setMessageText(shortcut.content);
+  const handleShortcut = (shortcut: MessageShortcut) => {
+    setMessageText(shortcut.content);
+    setShowShortcuts(false);
+    inputRef.current?.focus();
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    setMessageText(value);
+    
+    // Show shortcuts when typing "/" or "//"
+    if (value.startsWith("/") || value.startsWith("//")) {
+      setShowShortcuts(true);
+    } else {
       setShowShortcuts(false);
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "/" && messageText === "") {
-      setShowShortcuts(true);
-    } else if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     } else if (e.key === "Escape") {
@@ -137,12 +167,37 @@ export default function ChatsPage() {
     }
   };
 
+  const handleAssign = (designerId: number) => {
+    if (!selectedChat) return;
+    updateChatMutation.mutate({ 
+      id: selectedChat.id, 
+      updates: { assignedToId: designerId } 
+    });
+  };
+
+  const handleTagChange = (newTag: string) => {
+    if (!selectedChat) return;
+    const currentTags = (selectedChat.tags as string[]) || [];
+    const updatedTags = currentTags.includes(newTag) 
+      ? currentTags.filter(t => t !== newTag)
+      : [...currentTags, newTag];
+    updateChatMutation.mutate({ 
+      id: selectedChat.id, 
+      updates: { tags: updatedTags } 
+    });
+  };
+
+  const copyPhoneNumber = () => {
+    if (selectedChat?.clientPhone) {
+      navigator.clipboard.writeText(selectedChat.clientPhone);
+      toast({ title: "Copied", description: "Phone number copied to clipboard" });
+    }
+  };
+
   const filteredChats = chats?.filter(chat => {
-    // Don't show internal chats in the main list
     if (chat.isInternal) return false;
-    // Designers only see their assigned chats
     if (isDesigner && chat.assignedToId !== user?.id) return false;
-    // Filter by search if provided
+    if (filterTag && !(chat.tags as string[] || []).includes(filterTag)) return false;
     if (search) {
       return (
         chat.clientName.toLowerCase().includes(search.toLowerCase()) ||
@@ -161,28 +216,33 @@ export default function ChatsPage() {
         }))
     : [];
 
-  const getTagColor = (tag: string) => {
-    switch (tag.toLowerCase()) {
-      case "new": return "bg-yellow-500/10 text-yellow-500 border-yellow-500/20";
-      case "changes": return "bg-blue-500/10 text-blue-500 border-blue-500/20";
-      case "satisfied": return "bg-green-500/10 text-green-500 border-green-500/20";
-      case "issues": return "bg-red-500/10 text-red-500 border-red-500/20";
-      default: return "bg-slate-500/10 text-slate-400 border-slate-500/20";
-    }
-  };
+  const getTagStyle = (tag: string) => TAG_COLORS[tag] || TAG_COLORS["New"];
+
+  // Get filtered shortcuts based on input
+  const filteredShortcuts = shortcuts?.filter(s => {
+    const searchTerm = messageText.replace(/^\/+/, "").toLowerCase();
+    return s.command.toLowerCase().includes(searchTerm);
+  });
 
   if (isLoading) return null;
 
   return (
     <div className="flex h-[calc(100vh-4rem)]">
+      {/* Left Sidebar - Chat List */}
       <div className="w-80 border-r border-slate-800 flex flex-col bg-slate-950">
+        {/* Header */}
         <div className="p-4 border-b border-slate-800">
-          <h2 className="text-lg font-bold text-white mb-3">Chats</h2>
+          <div className="flex items-center gap-2 mb-4">
+            <MessageSquare className="w-5 h-5 text-blue-500" />
+            <h2 className="text-lg font-bold text-white">Chats</h2>
+          </div>
+          
+          {/* Search */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
             <Input
-              placeholder="Search by name or phone..."
-              className="pl-10 bg-slate-900 border-slate-800 text-white"
+              placeholder="Search by name, number, or order ID"
+              className="pl-10 bg-slate-900 border-slate-700 text-white text-sm"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               data-testid="input-search-chats"
@@ -190,32 +250,44 @@ export default function ChatsPage() {
           </div>
         </div>
 
-        <Tabs defaultValue="all" className="flex-1 flex flex-col">
-          <TabsList className="bg-slate-900 border-b border-slate-800 rounded-none p-1 mx-2 mt-2">
-            <TabsTrigger value="all" className="text-xs data-[state=active]:bg-blue-600">
-              {isDesigner ? "My Chats" : "All Chats"}
-            </TabsTrigger>
-            <TabsTrigger value="new" className="text-xs data-[state=active]:bg-blue-600">
-              New ({newMessageChats?.length || 0})
-            </TabsTrigger>
-            {(isAdmin || isSupport) && (
-              <TabsTrigger value="designers" className="text-xs data-[state=active]:bg-blue-600">
-                <Users className="w-3 h-3 mr-1" />
-                By Designer
+        {/* Tabs with Content */}
+        <Tabs defaultValue="all" className="flex-1 flex flex-col overflow-hidden">
+          <div className="px-4 py-2 border-b border-slate-800">
+            <TabsList className="bg-transparent p-0 h-auto gap-1">
+              <TabsTrigger 
+                value="all" 
+                className="px-3 py-1.5 text-sm data-[state=active]:bg-slate-800 data-[state=active]:text-white rounded-md"
+              >
+                All Chats
               </TabsTrigger>
-            )}
-          </TabsList>
+              <TabsTrigger 
+                value="new" 
+                className="px-3 py-1.5 text-sm data-[state=active]:bg-slate-800 data-[state=active]:text-white rounded-md"
+              >
+                New Messages
+              </TabsTrigger>
+              {(isAdmin || isSupport) && (
+                <TabsTrigger 
+                  value="designers" 
+                  className="px-3 py-1.5 text-sm data-[state=active]:bg-slate-800 data-[state=active]:text-white rounded-md"
+                >
+                  By Designer
+                </TabsTrigger>
+              )}
+            </TabsList>
+          </div>
 
+          {/* All Chats Tab */}
           <TabsContent value="all" className="flex-1 m-0 overflow-hidden">
             <ScrollArea className="h-full">
-              <div className="space-y-1 p-2">
+              <div className="p-2 space-y-1">
                 {filteredChats?.map(chat => (
                   <ChatListItem
                     key={chat.id}
                     chat={chat}
                     isSelected={selectedChat?.id === chat.id}
                     onClick={() => setSelectedChat(chat)}
-                    getTagColor={getTagColor}
+                    getTagStyle={getTagStyle}
                   />
                 ))}
                 {(!filteredChats || filteredChats.length === 0) && (
@@ -225,16 +297,17 @@ export default function ChatsPage() {
             </ScrollArea>
           </TabsContent>
 
+          {/* New Messages Tab */}
           <TabsContent value="new" className="flex-1 m-0 overflow-hidden">
             <ScrollArea className="h-full">
-              <div className="space-y-1 p-2">
+              <div className="p-2 space-y-1">
                 {newMessageChats?.map(chat => (
                   <ChatListItem
                     key={chat.id}
                     chat={chat}
                     isSelected={selectedChat?.id === chat.id}
                     onClick={() => setSelectedChat(chat)}
-                    getTagColor={getTagColor}
+                    getTagStyle={getTagStyle}
                   />
                 ))}
                 {(!newMessageChats || newMessageChats.length === 0) && (
@@ -244,6 +317,7 @@ export default function ChatsPage() {
             </ScrollArea>
           </TabsContent>
 
+          {/* By Designer Tab */}
           {(isAdmin || isSupport) && (
             <TabsContent value="designers" className="flex-1 m-0 overflow-hidden">
               <ScrollArea className="h-full">
@@ -260,37 +334,91 @@ export default function ChatsPage() {
                             chat={chat}
                             isSelected={selectedChat?.id === chat.id}
                             onClick={() => setSelectedChat(chat)}
-                            getTagColor={getTagColor}
+                            getTagStyle={getTagStyle}
                           />
                         ))}
                       </div>
                     </div>
                   ))}
+                  {designerGroups.length === 0 && (
+                    <p className="text-slate-500 text-center py-8 text-sm">No chats assigned</p>
+                  )}
                 </div>
               </ScrollArea>
             </TabsContent>
           )}
         </Tabs>
+
+        {/* Filter Tags */}
+        <div className="p-4 border-t border-slate-800">
+          <p className="text-xs text-slate-500 mb-2">Filter Tags</p>
+          <div className="flex flex-wrap gap-2">
+            {CHAT_TAGS.map(tag => {
+              const style = getTagStyle(tag);
+              const isActive = filterTag === tag;
+              return (
+                <button
+                  key={tag}
+                  onClick={() => setFilterTag(isActive ? null : tag)}
+                  className={cn(
+                    "flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors",
+                    isActive ? style.bg : "bg-slate-800 hover:bg-slate-700",
+                    isActive ? style.text : "text-slate-400"
+                  )}
+                >
+                  <span className={cn("w-2 h-2 rounded-full", style.dot)} />
+                  {tag}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Bottom Status Bar */}
+        <div className="p-3 border-t border-slate-800 flex items-center gap-3">
+          {CHAT_TAGS.map(tag => {
+            const style = getTagStyle(tag);
+            return (
+              <div key={tag} className="flex items-center gap-1.5 text-xs text-slate-400">
+                <span className={cn("w-2 h-2 rounded-full", style.dot)} />
+                {tag}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
+      {/* Right Panel - Chat Detail */}
       <div className="flex-1 flex flex-col bg-slate-900">
         {selectedChat ? (
           <>
+            {/* Chat Header */}
             <div className="p-4 border-b border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-lg text-white">
-                  {selectedChat.clientName.charAt(0)}
-                </div>
+                <Avatar className={cn("w-12 h-12", getAvatarColor(selectedChat.clientName))}>
+                  <AvatarFallback className="text-white text-lg font-medium">
+                    {selectedChat.clientName.charAt(0)}
+                  </AvatarFallback>
+                </Avatar>
                 <div>
-                  <h3 className="text-white font-medium">{selectedChat.clientName}</h3>
                   <div className="flex items-center gap-2">
+                    <h3 className="text-white font-semibold text-lg">{selectedChat.clientName}</h3>
                     {selectedChat.clientPhone && (
-                      <span className="text-xs text-slate-400">{selectedChat.clientPhone}</span>
+                      <span className="text-slate-400 text-sm">{selectedChat.clientPhone}</span>
                     )}
+                  </div>
+                  <div className="flex items-center gap-2 mt-1">
+                    {(selectedChat.tags as string[] || []).map((tag, idx) => {
+                      const style = getTagStyle(tag);
+                      return (
+                        <Badge key={idx} className={cn("text-xs", style.bg, style.text, "border-0")}>
+                          {tag}
+                        </Badge>
+                      );
+                    })}
                     {selectedChat.linkedOrderId && (
                       <Badge variant="outline" className="text-xs border-blue-500/30 text-blue-400">
-                        <Link2 className="w-3 h-3 mr-1" />
-                        Order Linked
+                        Order #{selectedChat.linkedOrderId}
                       </Badge>
                     )}
                   </div>
@@ -298,135 +426,139 @@ export default function ChatsPage() {
               </div>
 
               <div className="flex items-center gap-2">
-                {selectedChat.clientPhone && (
-                  <a
-                    href={`https://wa.me/${selectedChat.clientPhone.replace(/\D/g, '')}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-2 rounded-lg text-green-500 hover:bg-green-500/10"
-                    data-testid="button-whatsapp-call"
+                {/* Assign Dropdown */}
+                {(isAdmin || isSupport) && (
+                  <Select
+                    value={selectedChat.assignedToId?.toString() || ""}
+                    onValueChange={(val) => handleAssign(Number(val))}
                   >
-                    <Phone className="w-5 h-5" />
-                  </a>
+                    <SelectTrigger className="w-auto h-8 bg-transparent border-slate-700 text-slate-300 text-sm gap-2">
+                      <span className="text-slate-500">Assign to:</span>
+                      <SelectValue placeholder="Select" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-slate-900 border-slate-700">
+                      {designers.map(d => (
+                        <SelectItem key={d.id} value={d.id.toString()} className="text-slate-300">
+                          {d.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 )}
+
+                {/* Tag Dropdown */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="text-slate-400">
-                      <MoreVertical className="w-5 h-5" />
+                    <Button variant="ghost" size="sm" className="text-slate-400 gap-1">
+                      Tag: {(selectedChat.tags as string[] || [])[0] || "None"}
+                      <ChevronDown className="w-3 h-3" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="bg-slate-900 border-slate-800">
-                    {(isAdmin || isSupport) && (
-                      <>
-                        <DropdownMenuItem className="text-slate-300">
-                          <UserPlus className="w-4 h-4 mr-2" />
-                          Assign Designer
-                        </DropdownMenuItem>
-                        <DropdownMenuItem className="text-slate-300">
-                          <Link2 className="w-4 h-4 mr-2" />
-                          Link to Order
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator className="bg-slate-800" />
-                      </>
-                    )}
-                    <DropdownMenuItem className="text-slate-300">
-                      <Tag className="w-4 h-4 mr-2" />
-                      Set Tag
-                    </DropdownMenuItem>
+                  <DropdownMenuContent align="end" className="bg-slate-900 border-slate-700">
+                    {CHAT_TAGS.map(tag => (
+                      <DropdownMenuItem 
+                        key={tag} 
+                        onClick={() => handleTagChange(tag)}
+                        className="text-slate-300"
+                      >
+                        <span className={cn("w-2 h-2 rounded-full mr-2", getTagStyle(tag).dot)} />
+                        {tag}
+                      </DropdownMenuItem>
+                    ))}
                   </DropdownMenuContent>
                 </DropdownMenu>
+
+                {/* Action Icons */}
+                <div className="flex items-center gap-1 ml-2">
+                  <Button variant="ghost" size="icon" className="text-slate-400 h-8 w-8">
+                    <ExternalLink className="w-4 h-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="text-slate-400 h-8 w-8" onClick={copyPhoneNumber}>
+                    <Copy className="w-4 h-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="text-slate-400 h-8 w-8">
+                    <Share2 className="w-4 h-4" />
+                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="text-slate-400 h-8 w-8">
+                        <MoreHorizontal className="w-4 h-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="bg-slate-900 border-slate-700">
+                      <DropdownMenuItem className="text-slate-300">View Order</DropdownMenuItem>
+                      <DropdownMenuItem className="text-slate-300">Mark as Read</DropdownMenuItem>
+                      <DropdownMenuItem className="text-red-400">Archive Chat</DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
               </div>
             </div>
 
-            {(selectedChat.tags as string[] || []).length > 0 && (
-              <div className="px-4 py-2 border-b border-slate-800 flex gap-2">
-                {(selectedChat.tags as string[] || []).map((tag, idx) => (
-                  <Badge key={idx} variant="secondary" className={getTagColor(tag)}>
-                    {tag}
-                  </Badge>
-                ))}
-              </div>
-            )}
-
+            {/* Messages Area */}
             <ScrollArea className="flex-1 p-4">
-              <div className="space-y-4">
+              <div className="space-y-4 max-w-3xl mx-auto">
                 {messages?.map(msg => (
-                  <div
-                    key={msg.id}
-                    className={`flex ${msg.senderType === 'user' ? 'justify-end' : 'justify-start'}`}
-                  >
-                    <div
-                      className={`max-w-[70%] rounded-2xl px-4 py-2 ${
-                        msg.senderType === 'user'
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-slate-800 text-slate-200'
-                      }`}
-                    >
-                      {msg.messageType === 'file' && msg.fileUrl && (
-                        <div className="mb-2">
-                          <a
-                            href={msg.fileUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-2 text-sm underline"
-                          >
-                            <FileText className="w-4 h-4" />
-                            {msg.fileName || "Attachment"}
-                          </a>
-                        </div>
-                      )}
-                      <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                      <p className={`text-xs mt-1 ${msg.senderType === 'user' ? 'text-blue-200' : 'text-slate-500'}`}>
-                        {format(new Date(msg.createdAt!), "h:mm a")}
-                        {msg.senderType === 'user' && (
-                          <span className="ml-1">
-                            {msg.isRead ? <CheckCheck className="w-3 h-3 inline" /> : <Check className="w-3 h-3 inline" />}
-                          </span>
-                        )}
-                      </p>
-                    </div>
-                  </div>
+                  <MessageBubble key={msg.id} message={msg} />
                 ))}
                 <div ref={messagesEndRef} />
               </div>
             </ScrollArea>
 
+            {/* Message Input */}
             <div className="p-4 border-t border-slate-800 relative">
-              {showShortcuts && (isAdmin || isSupport) && (
-                <div className="absolute bottom-full left-4 right-4 mb-2 bg-slate-800 rounded-lg border border-slate-700 shadow-xl max-h-48 overflow-y-auto">
-                  <div className="p-2">
-                    <p className="text-xs text-slate-400 mb-2">Quick Messages (type / to open)</p>
-                    {shortcuts?.map(shortcut => (
+              {/* Shortcuts Popup */}
+              {showShortcuts && filteredShortcuts && filteredShortcuts.length > 0 && (
+                <div className="absolute bottom-full left-4 right-4 mb-2 bg-slate-800 rounded-lg border border-slate-700 shadow-xl overflow-hidden">
+                  <div className="p-2 border-b border-slate-700">
+                    <div className="flex items-center gap-2 text-slate-400 text-sm px-2">
+                      <span className="text-blue-400">&gt;</span>
+                      <span>{messageText}</span>
+                    </div>
+                  </div>
+                  <div className="max-h-48 overflow-y-auto">
+                    {filteredShortcuts.map(shortcut => (
                       <button
                         key={shortcut.id}
-                        className="w-full text-left px-3 py-2 rounded hover:bg-slate-700 text-sm text-slate-300"
-                        onClick={() => handleShortcut(shortcut.command)}
+                        className="w-full text-left px-4 py-2 hover:bg-slate-700 flex items-center gap-3"
+                        onClick={() => handleShortcut(shortcut)}
                       >
-                        <span className="text-blue-400">/{shortcut.command}</span>
-                        <span className="text-slate-500 ml-2">{shortcut.content.substring(0, 40)}...</span>
+                        <span className="text-blue-400 font-medium">/{shortcut.command}</span>
+                        <span className="text-slate-400 text-sm truncate">{shortcut.content.substring(0, 50)}...</span>
                       </button>
                     ))}
                   </div>
                 </div>
               )}
 
-              <div className="flex items-end gap-2">
-                <Button variant="ghost" size="icon" className="text-slate-400 hover:text-white shrink-0">
-                  <Paperclip className="w-5 h-5" />
-                </Button>
-                <Textarea
-                  placeholder="Type a message..."
-                  className="bg-slate-800 border-slate-700 text-white resize-none min-h-[44px] max-h-32"
-                  value={messageText}
-                  onChange={(e) => setMessageText(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  rows={1}
-                  data-testid="input-message"
-                />
+              <div className="flex items-end gap-2 max-w-3xl mx-auto">
+                <div className="flex-1 relative">
+                  <Textarea
+                    ref={inputRef}
+                    placeholder="Type a message..."
+                    className="bg-slate-800 border-slate-700 text-white resize-none min-h-[44px] max-h-32 pr-24"
+                    value={messageText}
+                    onChange={handleInputChange}
+                    onKeyDown={handleKeyDown}
+                    rows={1}
+                    data-testid="input-message"
+                  />
+                  <div className="absolute right-2 bottom-2 flex items-center gap-1">
+                    <Button variant="ghost" size="icon" className="text-slate-400 h-7 w-7">
+                      <Smile className="w-4 h-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="text-slate-400 h-7 w-7">
+                      <Mic className="w-4 h-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="text-slate-400 h-7 w-7">
+                      <Phone className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
                 <Button
                   onClick={handleSend}
                   disabled={!messageText.trim() || sendMessageMutation.isPending}
-                  className="bg-blue-600 hover:bg-blue-700 shrink-0"
+                  className="bg-blue-600 hover:bg-blue-700 h-[44px] px-4"
                   data-testid="button-send-message"
                 >
                   <Send className="w-4 h-4" />
@@ -452,24 +584,38 @@ function ChatListItem({
   chat,
   isSelected,
   onClick,
-  getTagColor,
+  getTagStyle,
 }: {
   chat: ChatWithDetails;
   isSelected: boolean;
   onClick: () => void;
-  getTagColor: (tag: string) => string;
+  getTagStyle: (tag: string) => { bg: string; text: string; dot: string };
 }) {
+  const primaryTag = (chat.tags as string[] || [])[0];
+  const tagStyle = primaryTag ? getTagStyle(primaryTag) : null;
+  
   return (
     <button
       onClick={onClick}
-      className={`w-full text-left p-3 rounded-lg transition-colors ${
-        isSelected ? 'bg-blue-600/20 border border-blue-500/30' : 'hover:bg-slate-800/50'
-      }`}
+      className={cn(
+        "w-full text-left p-3 rounded-lg transition-colors relative",
+        isSelected 
+          ? "bg-slate-800/70 border-l-2 border-l-blue-500" 
+          : "hover:bg-slate-800/50"
+      )}
       data-testid={`chat-item-${chat.id}`}
     >
       <div className="flex items-start gap-3">
-        <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-sm text-white shrink-0">
-          {chat.clientName.charAt(0)}
+        <div className="relative">
+          <Avatar className={cn("w-10 h-10", getAvatarColor(chat.clientName))}>
+            <AvatarFallback className="text-white text-sm font-medium">
+              {chat.clientName.charAt(0)}
+            </AvatarFallback>
+          </Avatar>
+          {/* Online indicator */}
+          {(chat.unreadCount || 0) > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-slate-950" />
+          )}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between">
@@ -480,21 +626,77 @@ function ChatListItem({
               </span>
             )}
           </div>
-          <p className="text-xs text-slate-400 truncate mt-0.5">{chat.lastMessage || "No messages yet"}</p>
-          <div className="flex items-center gap-1 mt-1">
-            {(chat.tags as string[] || []).slice(0, 2).map((tag, idx) => (
-              <Badge key={idx} variant="secondary" className={`text-[10px] px-1 py-0 ${getTagColor(tag)}`}>
-                {tag}
+          
+          {/* Tags Row */}
+          <div className="flex items-center gap-1.5 mt-1">
+            {primaryTag && tagStyle && (
+              <Badge className={cn("text-[10px] px-1.5 py-0 h-5", tagStyle.bg, tagStyle.text, "border-0")}>
+                {primaryTag}
               </Badge>
-            ))}
+            )}
             {(chat.unreadCount || 0) > 0 && (
-              <Badge className="bg-blue-600 text-white text-[10px] px-1.5 py-0 ml-auto">
-                {chat.unreadCount}
+              <Badge className="bg-blue-600 text-white text-[10px] px-1.5 py-0 h-5">
+                {chat.unreadCount} New
               </Badge>
             )}
           </div>
+          
+          {/* Last Message Preview */}
+          <p className="text-xs text-slate-400 truncate mt-1">{chat.lastMessage || "No messages yet"}</p>
         </div>
       </div>
     </button>
+  );
+}
+
+function MessageBubble({ message }: { message: Message }) {
+  const isUser = message.senderType === "user";
+  const isSystem = message.messageType === "system";
+  
+  if (isSystem) {
+    return (
+      <div className="flex justify-center">
+        <div className="bg-emerald-500/20 text-emerald-400 px-4 py-2 rounded-full text-sm flex items-center gap-2">
+          <CheckCircle className="w-4 h-4" />
+          {message.content}
+          <span className="text-emerald-500/70 text-xs">
+            {format(new Date(message.createdAt!), "h:mm a")}
+          </span>
+        </div>
+      </div>
+    );
+  }
+  
+  return (
+    <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
+      <div
+        className={cn(
+          "max-w-[70%] rounded-2xl px-4 py-2",
+          isUser
+            ? "bg-slate-700 text-white"
+            : "bg-slate-800 text-slate-200"
+        )}
+      >
+        {message.messageType === "file" && message.fileUrl && (
+          <div className="mb-2">
+            <img 
+              src={message.fileUrl} 
+              alt={message.fileName || "Attachment"} 
+              className="rounded-lg max-w-full"
+            />
+            <span className="absolute bottom-2 right-2 text-xs text-white/70 bg-black/50 px-1 rounded">
+              {format(new Date(message.createdAt!), "h:mm a")}
+            </span>
+          </div>
+        )}
+        <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+        <p className={cn(
+          "text-xs mt-1 text-right",
+          isUser ? "text-slate-400" : "text-slate-500"
+        )}>
+          {format(new Date(message.createdAt!), "h:mm a")}
+        </p>
+      </div>
+    </div>
   );
 }
