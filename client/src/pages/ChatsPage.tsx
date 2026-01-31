@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, keepPreviousData } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -94,13 +94,15 @@ export default function ChatsPage() {
 
   const { data: chats, isLoading } = useQuery<ChatWithDetails[]>({
     queryKey: ["/api/chats"],
-    refetchInterval: 5000, // Poll every 5 seconds for real-time sync
+    refetchInterval: 5000,
+    placeholderData: keepPreviousData,
   });
 
   const { data: messages } = useQuery<Message[]>({
     queryKey: ["/api/chats", selectedChat?.id, "messages"],
     enabled: !!selectedChat,
-    refetchInterval: 3000, // Poll messages more frequently
+    refetchInterval: 3000,
+    placeholderData: keepPreviousData,
   });
 
   const { data: teamMembers } = useQuery<User[]>({
