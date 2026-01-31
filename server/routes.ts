@@ -34,12 +34,22 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   // === AUTH SETUP ===
+  // Trust proxy for Replit deployments
+  if (process.env.NODE_ENV === "production") {
+    app.set("trust proxy", 1);
+  }
+  
   app.use(
     session({
       secret: process.env.SESSION_SECRET || "pixely_secret_key",
       resave: false,
       saveUninitialized: false,
-      cookie: { secure: process.env.NODE_ENV === "production" },
+      cookie: { 
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+        httpOnly: true,
+        maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      },
     })
   );
 
