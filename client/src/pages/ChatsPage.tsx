@@ -309,7 +309,10 @@ export default function ChatsPage() {
         {/* Tabs */}
         <Tabs defaultValue="all" className="flex-1 flex flex-col overflow-hidden">
           <div className="px-3 py-3 border-b border-slate-800">
-            <TabsList className="bg-slate-800/50 p-1 h-auto w-full grid grid-cols-3 gap-1">
+            <TabsList className={cn(
+              "bg-slate-800/50 p-1 h-auto w-full grid gap-1",
+              (isAdmin || isSupport) ? "grid-cols-3" : "grid-cols-2"
+            )}>
               <TabsTrigger 
                 value="all" 
                 className="px-2 py-2 text-xs data-[state=active]:bg-slate-700 data-[state=active]:text-white rounded"
