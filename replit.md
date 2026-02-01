@@ -133,8 +133,17 @@ All monetary values displayed in PKR (₨), stored as integers (cents) in the da
 
 ### Payment Verification System (February 2026)
 - Full payment verification workflow implemented with role-based access
-- Order creation form includes Payment Type selection (Advance/Full) and Screenshot upload
+- Order creation stores intended designer but doesn't assign until payment approved
+- Orders have advancePaymentStatus field: pending, approved, disapproved
+- Orders have intendedDesignerId to hold designer selection before payment approval
 - Payment types: advance (partial payment), full (complete payment), remaining (for designers)
+- Payment approval flow:
+  - Advance/Full: Assigns designer from intendedDesignerId, sets order status to "new", updates finances
+  - Remaining: Adds to collected amount, reduces remaining balance
+  - Designer is notified of assignment on approval
+- Payment disapproval flow:
+  - Advance/Full: Sets advancePaymentStatus to disapproved, cancels order
+  - Remaining: Only marks payment as disapproved (order stays active)
 - PaymentsPage at /payments shows all payment requests with:
   - Admin: Full view with filters (status, type, role), approve/disapprove actions
   - Support: View own submitted requests
@@ -149,6 +158,10 @@ All monetary values displayed in PKR (₨), stored as integers (cents) in the da
   - Full: sets advanceAmount to total, remainingAmount to 0, paymentStatus to paid
   - Remaining: moves remaining to advance, sets remainingAmount to 0, paymentStatus to paid
 - Role-based data sanitization: non-admins only see orderNumber and clientName in payment details
+- Orders table UI updates:
+  - Order ID column visible to all roles (including designers)
+  - Advance Payment Status ("Adv. Payment") column added (Admin/Support only, hidden from designers)
+  - Designers only see orders assigned to them (unassigned orders are filtered out)
 
 ### Key Database Tables
 - **chats**: WhatsApp-ready chat records with tags, assignment, and linking to orders
