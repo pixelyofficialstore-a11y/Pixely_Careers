@@ -293,6 +293,16 @@ export async function registerRoutes(
       updates.readyDate = new Date();
     }
 
+    // When payment status changes from Pending to Paid:
+    // - Add remainingAmount to advanceAmount (total collected increases)
+    // - Set remainingAmount to 0 (outstanding decreases)
+    if (updates.paymentStatus === 'paid' && existingOrder.paymentStatus === 'pending') {
+      const currentAdvance = existingOrder.advanceAmount || 0;
+      const currentRemaining = existingOrder.remainingAmount || 0;
+      updates.advanceAmount = currentAdvance + currentRemaining;
+      updates.remainingAmount = 0;
+    }
+
     const updatedOrder = await storage.updateOrder(orderId, updates);
     
     // Notifications
