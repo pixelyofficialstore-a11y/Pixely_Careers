@@ -146,9 +146,13 @@ export default function OrdersPage() {
   });
 
   // Only count orders with approved payment status in all views
+  // Admin can see all orders (including non-approved), others only see approved
+  const visibleOrders = isAdmin 
+    ? (filteredOrders || [])
+    : (filteredOrders?.filter(order => order.advancePaymentStatus === 'approved') || []);
   const approvedOrders = filteredOrders?.filter(order => order.advancePaymentStatus === 'approved') || [];
   
-  const todayOrders = approvedOrders.filter(order => {
+  const todayOrders = visibleOrders.filter(order => {
     const createdDate = new Date(order.createdAt!);
     const isActive = isToday(createdDate) || (order.status !== "delivered" && order.status !== "canceled");
     // Designers only see orders assigned to them (filter out unassigned)
@@ -158,7 +162,7 @@ export default function OrdersPage() {
     return isActive;
   });
 
-  const monthlyOrders = approvedOrders.filter(order => {
+  const monthlyOrders = visibleOrders.filter(order => {
     const createdDate = new Date(order.createdAt!);
     const inMonth = createdDate.getMonth().toString() === selectedMonth;
     const inYear = createdDate.getFullYear().toString() === selectedYear;
@@ -430,20 +434,61 @@ export default function OrdersPage() {
                       </TableCell>
                       {!isDesigner && (
                         <TableCell>
-                          {getAdvancePaymentStatusBadge(order.advancePaymentStatus)}
+                          {isAdmin ? (
+                            <Select 
+                              defaultValue={order.advancePaymentStatus || "pending"} 
+                              onValueChange={(val) => updateOrderMutation.mutate({ id: order.id, updates: { advancePaymentStatus: val } })}
+                            >
+                              <SelectTrigger className="w-32 bg-transparent border-0 h-auto p-0 focus:ring-0 shadow-none hover:bg-white/5 rounded px-2 py-1" data-testid={`select-adv-payment-${order.id}`}>
+                                <SelectValue>{getAdvancePaymentStatusBadge(order.advancePaymentStatus)}</SelectValue>
+                              </SelectTrigger>
+                              <SelectContent className="bg-slate-900 border-slate-800">
+                                <SelectItem value="pending">Pending</SelectItem>
+                                <SelectItem value="approved">Approved</SelectItem>
+                                <SelectItem value="disapproved">Disapproved</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            getAdvancePaymentStatusBadge(order.advancePaymentStatus)
+                          )}
                         </TableCell>
                       )}
                       <TableCell>
-                        <Badge 
-                          variant="outline" 
-                          className={cn(
-                            "border-0",
-                            order.paymentStatus === 'paid' ? "text-green-500" : "text-yellow-500"
-                          )}
-                          data-testid={`badge-payment-${order.id}`}
-                        >
-                          {order.paymentStatus === 'paid' ? "Paid" : "Pending"}
-                        </Badge>
+                        {isAdmin ? (
+                          <Select 
+                            defaultValue={order.paymentStatus || "pending"} 
+                            onValueChange={(val) => updateOrderMutation.mutate({ id: order.id, updates: { paymentStatus: val } })}
+                          >
+                            <SelectTrigger className="w-28 bg-transparent border-0 h-auto p-0 focus:ring-0 shadow-none hover:bg-white/5 rounded px-2 py-1" data-testid={`select-payment-${order.id}`}>
+                              <SelectValue>
+                                <Badge 
+                                  variant="outline" 
+                                  className={cn(
+                                    "border-0",
+                                    order.paymentStatus === 'paid' ? "text-green-500" : "text-yellow-500"
+                                  )}
+                                >
+                                  {order.paymentStatus === 'paid' ? "Paid" : "Pending"}
+                                </Badge>
+                              </SelectValue>
+                            </SelectTrigger>
+                            <SelectContent className="bg-slate-900 border-slate-800">
+                              <SelectItem value="pending">Pending</SelectItem>
+                              <SelectItem value="paid">Paid</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Badge 
+                            variant="outline" 
+                            className={cn(
+                              "border-0",
+                              order.paymentStatus === 'paid' ? "text-green-500" : "text-yellow-500"
+                            )}
+                            data-testid={`badge-payment-${order.id}`}
+                          >
+                            {order.paymentStatus === 'paid' ? "Paid" : "Pending"}
+                          </Badge>
+                        )}
                       </TableCell>
                       {canSeeFinance && (
                         <TableCell className="text-red-400 font-medium">
@@ -647,17 +692,55 @@ export default function OrdersPage() {
                     </TableCell>
                     {!isDesigner && (
                       <TableCell>
-                        {getAdvancePaymentStatusBadge(order.advancePaymentStatus)}
+                        {isAdmin ? (
+                          <Select 
+                            defaultValue={order.advancePaymentStatus || "pending"} 
+                            onValueChange={(val) => updateOrderMutation.mutate({ id: order.id, updates: { advancePaymentStatus: val } })}
+                          >
+                            <SelectTrigger className="w-32 bg-transparent border-0 h-auto p-0 focus:ring-0 shadow-none hover:bg-white/5 rounded px-2 py-1" data-testid={`select-monthly-adv-payment-${order.id}`}>
+                              <SelectValue>{getAdvancePaymentStatusBadge(order.advancePaymentStatus)}</SelectValue>
+                            </SelectTrigger>
+                            <SelectContent className="bg-slate-900 border-slate-800">
+                              <SelectItem value="pending">Pending</SelectItem>
+                              <SelectItem value="approved">Approved</SelectItem>
+                              <SelectItem value="disapproved">Disapproved</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          getAdvancePaymentStatusBadge(order.advancePaymentStatus)
+                        )}
                       </TableCell>
                     )}
                     <TableCell>
-                      <Badge 
-                        variant="outline" 
-                        className={cn("border-0", order.paymentStatus === 'paid' ? "text-green-500" : "text-yellow-500")}
-                        data-testid={`badge-monthly-payment-${order.id}`}
-                      >
-                        {order.paymentStatus === 'paid' ? "Paid" : "Pending"}
-                      </Badge>
+                      {isAdmin ? (
+                        <Select 
+                          defaultValue={order.paymentStatus || "pending"} 
+                          onValueChange={(val) => updateOrderMutation.mutate({ id: order.id, updates: { paymentStatus: val } })}
+                        >
+                          <SelectTrigger className="w-28 bg-transparent border-0 h-auto p-0 focus:ring-0 shadow-none hover:bg-white/5 rounded px-2 py-1" data-testid={`select-monthly-payment-${order.id}`}>
+                            <SelectValue>
+                              <Badge 
+                                variant="outline" 
+                                className={cn("border-0", order.paymentStatus === 'paid' ? "text-green-500" : "text-yellow-500")}
+                              >
+                                {order.paymentStatus === 'paid' ? "Paid" : "Pending"}
+                              </Badge>
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectContent className="bg-slate-900 border-slate-800">
+                            <SelectItem value="pending">Pending</SelectItem>
+                            <SelectItem value="paid">Paid</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Badge 
+                          variant="outline" 
+                          className={cn("border-0", order.paymentStatus === 'paid' ? "text-green-500" : "text-yellow-500")}
+                          data-testid={`badge-monthly-payment-${order.id}`}
+                        >
+                          {order.paymentStatus === 'paid' ? "Paid" : "Pending"}
+                        </Badge>
+                      )}
                     </TableCell>
                     {canSeeFinance && (
                       <TableCell className="text-red-400 font-medium">

@@ -178,6 +178,10 @@ All monetary values displayed in PKR (₨), stored as integers (cents) in the da
   - Served via /api/avatars/:filename endpoint (public access)
 - Table scrollbar UX improved with custom CSS class (table-scroll-wrapper) providing better visibility and accessibility
 - Session timeout extended from 24 hours to 1 year (365 days) - users stay logged in until manual sign-out
+- Admin can now see ALL orders (including non-approved/pending orders) on Orders page
+- Admin can manually change Advance Payment Status (pending/approved/disapproved) via dropdown
+- Admin can manually change Payment Status (pending/paid) via dropdown
+- Non-admin users (Support/Designer) only see approved orders and cannot edit payment statuses
 
 ### Key Database Tables
 - **chats**: WhatsApp-ready chat records with tags, assignment, and linking to orders
