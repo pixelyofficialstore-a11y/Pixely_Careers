@@ -131,9 +131,28 @@ All monetary values displayed in PKR (₨), stored as integers (cents) in the da
 - Sidebar auto-closes on navigation in mobile view via onNavigate callback
 - Main content area uses overflow-y-auto for scrollable pages
 
+### Payment Verification System (February 2026)
+- Full payment verification workflow implemented with role-based access
+- Order creation form includes Payment Type selection (Advance/Full) and Screenshot upload
+- Payment types: advance (partial payment), full (complete payment), remaining (for designers)
+- PaymentsPage at /payments shows all payment requests with:
+  - Admin: Full view with filters (status, type, role), approve/disapprove actions
+  - Support: View own submitted requests
+  - Designer: View own requests, can submit remaining payment requests
+- API endpoints:
+  - GET /api/payment-verifications (role-filtered list)
+  - POST /api/payment-verifications (create with FormData screenshot upload)
+  - PATCH /api/payment-verifications/:id/approve (admin only, updates order finances)
+  - PATCH /api/payment-verifications/:id/disapprove (admin only)
+- Payment approval flow:
+  - Advance: adds to advanceAmount, reduces remainingAmount
+  - Full: sets advanceAmount to total, remainingAmount to 0, paymentStatus to paid
+  - Remaining: moves remaining to advance, sets remainingAmount to 0, paymentStatus to paid
+- Role-based data sanitization: non-admins only see orderNumber and clientName in payment details
+
 ### Key Database Tables
 - **chats**: WhatsApp-ready chat records with tags, assignment, and linking to orders
 - **messages**: Chat messages with file attachment support
 - **message_shortcuts**: Quick message templates for support staff
 - **activity_logs**: Track all changes to orders and chats (schema ready)
-- **payment_verifications**: Screenshot upload and admin approval workflow (schema ready)
+- **payment_verifications**: Payment verification records with paymentType (advance/full/remaining), amount, screenshotUrl, status (pending_confirmation/approved/disapproved)

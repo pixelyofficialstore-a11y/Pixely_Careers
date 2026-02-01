@@ -15,6 +15,7 @@ import TeamPage from "@/pages/TeamPage";
 import AnalyticsPage from "@/pages/AnalyticsPage";
 import ChatsPage from "@/pages/ChatsPage";
 import ShortcutsPage from "@/pages/ShortcutsPage";
+import PaymentsPage from "@/pages/PaymentsPage";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -58,6 +59,13 @@ function Router() {
         <ProtectedRoute>
           <Layout>
             <ChatsPage />
+          </Layout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/payments">
+        <ProtectedRoute>
+          <Layout>
+            <PaymentsPage />
           </Layout>
         </ProtectedRoute>
       </Route>

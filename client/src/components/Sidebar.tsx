@@ -8,7 +8,8 @@ import {
   BarChart3, 
   LogOut,
   Settings,
-  Bell
+  Bell,
+  CreditCard
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -28,6 +29,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
     { href: "/", label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "support", "designer"] },
     { href: "/orders", label: "Orders", icon: FileText, roles: ["admin", "support", "designer"] },
     { href: "/chats", label: "Chats", icon: MessageSquare, roles: ["admin", "support", "designer"] },
+    { href: "/payments", label: "Payments", icon: CreditCard, roles: ["admin", "support", "designer"] },
     { href: "/users", label: "Team", icon: Users, roles: ["admin"] },
     { href: "/stats", label: "Analytics", icon: BarChart3, roles: ["admin"] },
     { href: "/shortcuts", label: "Shortcuts", icon: Settings, roles: ["admin"] },

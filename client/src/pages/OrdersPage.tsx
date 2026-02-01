@@ -855,7 +855,6 @@ function CreateOrderForm({ designers, onSuccess }: { designers: User[]; onSucces
   const [clientName, setClientName] = useState("");
   const [clientPhone, setClientPhone] = useState("");
   const [assignedToId, setAssignedToId] = useState("");
-  const [paymentStatus, setPaymentStatus] = useState("pending");
   const [totalBill, setTotalBill] = useState("");
   const [advanceAmount, setAdvanceAmount] = useState("");
   const [campaign, setCampaign] = useState("");
@@ -863,6 +862,11 @@ function CreateOrderForm({ designers, onSuccess }: { designers: User[]; onSucces
   const [creative, setCreative] = useState("");
   const [notes, setNotes] = useState("");
   const [services, setServices] = useState([{ serviceType: "", quantity: 1, instructions: "" }]);
+  
+  // Payment verification fields
+  const [paymentType, setPaymentType] = useState<"advance" | "full">("advance");
+  const [paymentScreenshot, setPaymentScreenshot] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -894,7 +898,7 @@ function CreateOrderForm({ designers, onSuccess }: { designers: User[]; onSucces
     setServices(updated);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     const missingFields: string[] = [];
@@ -915,24 +919,68 @@ function CreateOrderForm({ designers, onSuccess }: { designers: User[]; onSucces
     const advanceValue = advanceAmount ? Math.round(parseFloat(advanceAmount) * 100) : 0;
     const remainingValue = totalPriceValue - advanceValue;
 
-    createMutation.mutate({
-      clientName: clientName.trim(),
-      clientPhone: clientPhone.trim(),
-      assignedToId: assignedToId ? parseInt(assignedToId) : null,
-      paymentStatus,
-      totalPrice: totalPriceValue,
-      advanceAmount: advanceValue,
-      remainingAmount: remainingValue,
-      campaign: campaign.trim() || null,
-      adSet: adSet.trim() || null,
-      creative: creative.trim() || null,
-      notes: notes.trim() || null,
-      services: services.filter(s => s.serviceType).map(s => ({
-        serviceType: s.serviceType,
-        quantity: s.quantity || 1,
-        instructions: s.instructions || null,
-      })),
-    });
+    // For payment verification system:
+    // - advance payment: advanceAmount is stored but status is pending_confirmation
+    // - full payment: total is stored but status is pending_confirmation
+    const paymentAmount = paymentType === "full" ? totalPriceValue : advanceValue;
+
+    setIsUploading(true);
+    try {
+      // First create the order with pending confirmation status
+      const orderRes = await apiRequest("POST", "/api/orders", {
+        clientName: clientName.trim(),
+        clientPhone: clientPhone.trim(),
+        assignedToId: assignedToId ? parseInt(assignedToId) : null,
+        paymentStatus: "pending", // Will be pending until admin approves
+        totalPrice: totalPriceValue,
+        advanceAmount: 0, // Will be updated when admin approves payment
+        remainingAmount: totalPriceValue, // Full amount is remaining until approved
+        campaign: campaign.trim() || null,
+        adSet: adSet.trim() || null,
+        creative: creative.trim() || null,
+        notes: notes.trim() || null,
+        services: services.filter(s => s.serviceType).map(s => ({
+          serviceType: s.serviceType,
+          quantity: s.quantity || 1,
+          instructions: s.instructions || null,
+        })),
+      });
+      
+      const order = await orderRes.json();
+      
+      // Then create payment verification request with screenshot
+      if (paymentScreenshot && paymentAmount > 0) {
+        const formData = new FormData();
+        formData.append("screenshot", paymentScreenshot);
+        formData.append("orderId", order.id.toString());
+        formData.append("paymentType", paymentType);
+        formData.append("amount", paymentAmount.toString());
+        
+        const verificationRes = await fetch("/api/payment-verifications", {
+          method: "POST",
+          body: formData,
+          credentials: "include",
+        });
+        
+        if (!verificationRes.ok) {
+          const errorData = await verificationRes.json().catch(() => ({}));
+          throw new Error(errorData.error || "Failed to submit payment verification");
+        }
+      }
+      
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/payment-verifications"] });
+      toast({ title: "Success", description: "Order created with payment request" });
+      onSuccess();
+    } catch (error: any) {
+      toast({ 
+        title: "Error", 
+        description: error?.message || "Failed to create order", 
+        variant: "destructive" 
+      });
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   return (
@@ -1071,17 +1119,40 @@ function CreateOrderForm({ designers, onSuccess }: { designers: User[]; onSucces
             </div>
           </div>
         </div>
-        <div className="space-y-2">
-          <Label className="text-slate-300">Payment Status</Label>
-          <Select value={paymentStatus} onValueChange={setPaymentStatus}>
-            <SelectTrigger className="bg-slate-950 border-slate-800 text-white w-40" data-testid="select-payment-status">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="bg-slate-900 border-slate-800 text-white">
-              <SelectItem value="pending">Pending</SelectItem>
-              <SelectItem value="paid">Paid</SelectItem>
-            </SelectContent>
-          </Select>
+      </div>
+
+      <div className="space-y-4">
+        <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Payment Verification</h4>
+        <div className="p-4 bg-slate-950 rounded-lg border border-slate-800 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label className="text-slate-300">Payment Type *</Label>
+              <Select value={paymentType} onValueChange={(val: "advance" | "full") => setPaymentType(val)}>
+                <SelectTrigger className="bg-slate-900 border-slate-700 text-white" data-testid="select-payment-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-slate-900 border-slate-800 text-white">
+                  <SelectItem value="advance">Advance (Partial)</SelectItem>
+                  <SelectItem value="full">Full Payment</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-slate-300">Payment Screenshot *</Label>
+              <Input 
+                type="file" 
+                accept="image/*"
+                onChange={(e) => setPaymentScreenshot(e.target.files?.[0] || null)}
+                className="bg-slate-900 border-slate-700 text-white file:bg-slate-800 file:text-slate-300 file:border-0 file:mr-3"
+                data-testid="input-payment-screenshot"
+              />
+            </div>
+          </div>
+          <p className="text-xs text-slate-500">
+            {paymentType === "advance" 
+              ? "Upload screenshot of advance payment. Remaining will be collected later."
+              : "Upload screenshot of full payment. Order will be marked as paid after admin approval."}
+          </p>
         </div>
       </div>
 
@@ -1134,8 +1205,8 @@ function CreateOrderForm({ designers, onSuccess }: { designers: User[]; onSucces
       </div>
 
       <div className="flex justify-end gap-3 pt-4 border-t border-slate-800">
-        <Button type="submit" className="bg-primary" disabled={createMutation.isPending} data-testid="button-submit-order">
-          {createMutation.isPending ? "Creating..." : "Create Order"}
+        <Button type="submit" className="bg-primary" disabled={isUploading} data-testid="button-submit-order">
+          {isUploading ? "Creating Order..." : "Create Order"}
         </Button>
       </div>
     </form>

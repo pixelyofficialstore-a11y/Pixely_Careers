@@ -157,12 +157,13 @@ export async function registerRoutes(
     const user = req.user as User;
     const orders = await storage.getOrders(user.role, user.id);
     
-    // Hide finance for non-admins
+    // Hide finance for non-admins, but designers can see remainingAmount for their assigned orders (for submitting remaining payments)
     const sanitizedOrders = orders.map(o => ({
       ...o,
       totalPrice: user.role === 'admin' ? o.totalPrice : undefined,
       advanceAmount: user.role === 'admin' ? o.advanceAmount : undefined,
-      remainingAmount: user.role === 'admin' ? o.remainingAmount : undefined,
+      // Designers can see remainingAmount for their assigned orders to submit remaining payments
+      remainingAmount: (user.role === 'admin' || (user.role === 'designer' && o.assignedToId === user.id)) ? o.remainingAmount : undefined,
     }));
 
     res.json(sanitizedOrders);
@@ -519,6 +520,201 @@ export async function registerRoutes(
     
     const updated = await storage.updateChat(chatId, updates);
     res.json(updated);
+  });
+
+  // === PAYMENT VERIFICATIONS ===
+  
+  // Get all payment verifications (role-based filtering)
+  app.get("/api/payment-verifications", requireAuth, async (req, res) => {
+    const user = req.user as User;
+    const verifications = await storage.getPaymentVerifications(user.role, user.id);
+    
+    // Add sanitized order info to each verification (only basic order details, no finance for non-admin)
+    const orders = await storage.getOrders(user.role, user.id);
+    const result = verifications.map(v => {
+      const order = orders.find(o => o.id === v.orderId);
+      // For non-admins, only expose orderNumber and clientName
+      const sanitizedOrder = order ? (user.role === 'admin' ? {
+        orderNumber: order.orderNumber,
+        clientName: order.clientName,
+        totalPrice: order.totalPrice,
+      } : {
+        orderNumber: order.orderNumber,
+        clientName: order.clientName,
+      }) : null;
+      return {
+        ...v,
+        order: sanitizedOrder,
+      };
+    });
+    
+    res.json(result);
+  });
+
+  // Get payment verifications for a specific order
+  app.get("/api/orders/:id/payment-verifications", requireAuth, async (req, res) => {
+    const orderId = Number(req.params.id);
+    const user = req.user as User;
+    
+    const order = await storage.getOrder(orderId);
+    if (!order) return res.sendStatus(404);
+    
+    // Designers can only see verifications for their assigned orders
+    if (user.role === 'designer' && order.assignedToId !== user.id) {
+      return res.sendStatus(403);
+    }
+    
+    const verifications = await storage.getPaymentVerificationsByOrder(orderId);
+    res.json(verifications);
+  });
+
+  // Create a payment verification request
+  app.post("/api/payment-verifications", requireAuth, upload.single('screenshot'), async (req, res) => {
+    const user = req.user as User;
+    const { orderId, paymentType, amount } = req.body;
+    
+    const order = await storage.getOrder(Number(orderId));
+    if (!order) return res.status(400).json({ error: "Order not found" });
+    
+    // Designers can only submit for their assigned orders
+    if (user.role === 'designer' && order.assignedToId !== user.id) {
+      return res.status(403).json({ error: "You can only submit payment requests for assigned orders" });
+    }
+    
+    // Support can only create at order creation (advance/full), Designer can only create remaining
+    if (user.role === 'designer' && paymentType !== 'remaining') {
+      return res.status(403).json({ error: "Designers can only submit remaining payment requests" });
+    }
+    
+    // Validate amount
+    const parsedAmount = Number(amount);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      return res.status(400).json({ error: "Invalid payment amount" });
+    }
+    
+    // For remaining payments, validate that amount doesn't exceed order's remaining balance
+    if (paymentType === 'remaining') {
+      const orderRemaining = order.remainingAmount || 0;
+      if (parsedAmount > orderRemaining) {
+        return res.status(400).json({ error: `Amount exceeds remaining balance (₨${(orderRemaining / 100).toFixed(2)})` });
+      }
+    }
+    
+    // Validate paymentType
+    const validPaymentTypes = ['advance', 'full', 'remaining'];
+    if (!validPaymentTypes.includes(paymentType)) {
+      return res.status(400).json({ error: "Invalid payment type" });
+    }
+    
+    // Screenshot is recommended but not strictly required (to allow flexibility)
+    const file = req.file;
+    const screenshotUrl = file ? `/api/payment-files/${file.filename}` : null;
+    
+    const verification = await storage.createPaymentVerification({
+      orderId: Number(orderId),
+      paymentType,
+      amount: Number(amount),
+      screenshotUrl,
+      submittedById: user.id,
+      status: "pending_confirmation",
+    });
+    
+    res.status(201).json(verification);
+  });
+
+  // Admin approve payment verification
+  app.patch("/api/payment-verifications/:id/approve", requireAuth, async (req, res) => {
+    const user = req.user as User;
+    if (user.role !== 'admin') {
+      return res.status(403).json({ error: "Only admin can approve payments" });
+    }
+    
+    const verificationId = Number(req.params.id);
+    const { notes } = req.body;
+    
+    // Get current verification
+    const verifications = await storage.getPaymentVerifications("admin", 0);
+    const verification = verifications.find(v => v.id === verificationId);
+    if (!verification) return res.sendStatus(404);
+    
+    // Update verification status
+    await storage.updatePaymentVerification(verificationId, {
+      status: "approved",
+      reviewedById: user.id,
+      reviewedAt: new Date(),
+      notes,
+    });
+    
+    // Get the order to update finances
+    const order = await storage.getOrder(verification.orderId);
+    if (!order) return res.sendStatus(404);
+    
+    // Update order finances based on payment type
+    const currentAdvance = order.advanceAmount || 0;
+    const currentRemaining = order.remainingAmount || 0;
+    
+    if (verification.paymentType === 'advance') {
+      // Advance payment: add to advance amount and reduce remaining
+      const newAdvance = currentAdvance + verification.amount;
+      const newRemaining = Math.max(0, (order.totalPrice || 0) - newAdvance);
+      await storage.updateOrder(order.id, {
+        advanceAmount: newAdvance,
+        remainingAmount: newRemaining,
+        paymentStatus: newRemaining === 0 ? "paid" : "pending",
+      });
+    } else if (verification.paymentType === 'full') {
+      // Full payment: mark as fully paid
+      await storage.updateOrder(order.id, {
+        advanceAmount: order.totalPrice, // Full amount collected
+        remainingAmount: 0,
+        paymentStatus: "paid",
+      });
+    } else if (verification.paymentType === 'remaining') {
+      // Remaining payment: add remaining to advance, clear remaining
+      await storage.updateOrder(order.id, {
+        advanceAmount: currentAdvance + currentRemaining,
+        remainingAmount: 0,
+        paymentStatus: "paid",
+      });
+    }
+    
+    const updatedVerification = await storage.getPaymentVerifications("admin", 0);
+    res.json(updatedVerification.find(v => v.id === verificationId));
+  });
+
+  // Admin disapprove payment verification
+  app.patch("/api/payment-verifications/:id/disapprove", requireAuth, async (req, res) => {
+    const user = req.user as User;
+    if (user.role !== 'admin') {
+      return res.status(403).json({ error: "Only admin can disapprove payments" });
+    }
+    
+    const verificationId = Number(req.params.id);
+    const { notes } = req.body;
+    
+    // Update verification status - no finance changes
+    await storage.updatePaymentVerification(verificationId, {
+      status: "disapproved",
+      reviewedById: user.id,
+      reviewedAt: new Date(),
+      notes,
+    });
+    
+    const updatedVerifications = await storage.getPaymentVerifications("admin", 0);
+    res.json(updatedVerifications.find(v => v.id === verificationId));
+  });
+
+  // Serve payment screenshot files (authenticated)
+  app.get('/api/payment-files/:filename', requireAuth, (req, res) => {
+    const filename = req.params.filename;
+    const sanitized = path.basename(filename);
+    const filePath = path.join(process.cwd(), 'uploads', sanitized);
+    
+    if (!fs.existsSync(filePath)) {
+      return res.sendStatus(404);
+    }
+    
+    res.sendFile(filePath);
   });
 
   // === SEED DATA ===

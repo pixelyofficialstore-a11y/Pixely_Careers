@@ -1,7 +1,8 @@
 import { 
-  users, orders, chats, messages, notifications, orderServices, messageShortcuts,
+  users, orders, chats, messages, notifications, orderServices, messageShortcuts, paymentVerifications, activityLogs,
   type User, type InsertUser, type Order, type InsertOrder, type Chat, type InsertChat, type Message, type Notification,
-  type OrderService, type InsertOrderService, type OrderWithServices, type MessageShortcut
+  type OrderService, type InsertOrderService, type OrderWithServices, type MessageShortcut, 
+  type PaymentVerification, type InsertPaymentVerification, type PaymentVerificationWithUsers
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, sql, and } from "drizzle-orm";
@@ -46,6 +47,12 @@ export interface IStorage {
 
   // Stats
   getStats(): Promise<any>;
+
+  // Payment Verifications
+  getPaymentVerifications(role: string, userId: number): Promise<PaymentVerificationWithUsers[]>;
+  getPaymentVerificationsByOrder(orderId: number): Promise<PaymentVerificationWithUsers[]>;
+  createPaymentVerification(data: InsertPaymentVerification): Promise<PaymentVerification>;
+  updatePaymentVerification(id: number, updates: Partial<InsertPaymentVerification>): Promise<PaymentVerification>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -301,6 +308,51 @@ export class DatabaseStorage implements IStorage {
       },
       chats: chatStats
     };
+  }
+
+  // Payment Verifications
+  async getPaymentVerifications(role: string, userId: number): Promise<PaymentVerificationWithUsers[]> {
+    let verificationList: PaymentVerification[];
+    
+    if (role === "admin") {
+      // Admin sees all payment verifications
+      verificationList = await db.select().from(paymentVerifications).orderBy(desc(paymentVerifications.createdAt));
+    } else {
+      // Support and Designer only see their own submissions
+      verificationList = await db.select().from(paymentVerifications)
+        .where(eq(paymentVerifications.submittedById, userId))
+        .orderBy(desc(paymentVerifications.createdAt));
+    }
+
+    const allUsers = await this.getUsers();
+    return verificationList.map(pv => ({
+      ...pv,
+      submittedBy: allUsers.find(u => u.id === pv.submittedById) || null,
+      reviewedBy: pv.reviewedById ? allUsers.find(u => u.id === pv.reviewedById) || null : null,
+    }));
+  }
+
+  async getPaymentVerificationsByOrder(orderId: number): Promise<PaymentVerificationWithUsers[]> {
+    const verificationList = await db.select().from(paymentVerifications)
+      .where(eq(paymentVerifications.orderId, orderId))
+      .orderBy(desc(paymentVerifications.createdAt));
+    
+    const allUsers = await this.getUsers();
+    return verificationList.map(pv => ({
+      ...pv,
+      submittedBy: allUsers.find(u => u.id === pv.submittedById) || null,
+      reviewedBy: pv.reviewedById ? allUsers.find(u => u.id === pv.reviewedById) || null : null,
+    }));
+  }
+
+  async createPaymentVerification(data: InsertPaymentVerification): Promise<PaymentVerification> {
+    const [verification] = await db.insert(paymentVerifications).values(data).returning();
+    return verification;
+  }
+
+  async updatePaymentVerification(id: number, updates: Partial<InsertPaymentVerification>): Promise<PaymentVerification> {
+    const [verification] = await db.update(paymentVerifications).set(updates).where(eq(paymentVerifications.id, id)).returning();
+    return verification;
   }
 }
 
