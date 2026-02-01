@@ -147,7 +147,12 @@ export default function OrdersPage() {
 
   const todayOrders = filteredOrders?.filter(order => {
     const createdDate = new Date(order.createdAt!);
-    return isToday(createdDate) || (order.status !== "delivered" && order.status !== "canceled");
+    const isActive = isToday(createdDate) || (order.status !== "delivered" && order.status !== "canceled");
+    // Designers only see orders assigned to them (filter out unassigned)
+    if (isDesigner && order.assignedToId !== user?.id) {
+      return false;
+    }
+    return isActive;
   });
 
   const monthlyOrders = filteredOrders?.filter(order => {
@@ -168,6 +173,15 @@ export default function OrdersPage() {
       case "delivered": return <Badge variant="secondary" className="bg-slate-500/10 text-slate-400 border-slate-500/20">Delivered</Badge>;
       case "canceled": return <Badge variant="secondary" className="bg-red-500/10 text-red-500 border-red-500/20">Canceled</Badge>;
       default: return null;
+    }
+  };
+
+  const getAdvancePaymentStatusBadge = (status: string | null | undefined) => {
+    switch (status) {
+      case "pending": return <Badge variant="secondary" className="bg-orange-500/10 text-orange-500 border-orange-500/20">Pending</Badge>;
+      case "approved": return <Badge variant="secondary" className="bg-green-500/10 text-green-500 border-green-500/20">Approved</Badge>;
+      case "disapproved": return <Badge variant="secondary" className="bg-red-500/10 text-red-500 border-red-500/20">Disapproved</Badge>;
+      default: return <Badge variant="secondary" className="bg-slate-500/10 text-slate-400 border-slate-500/20">-</Badge>;
     }
   };
 
@@ -316,13 +330,14 @@ export default function OrdersPage() {
             <Table>
               <TableHeader className="bg-slate-900/50">
                 <TableRow className="border-slate-800 hover:bg-transparent">
-                  {!isDesigner && <TableHead className="text-slate-400">Order ID</TableHead>}
+                  <TableHead className="text-slate-400">Order ID</TableHead>
                   <TableHead className="text-slate-400">Date Placed</TableHead>
                   <TableHead className="text-slate-400">Client</TableHead>
                   <TableHead className="text-slate-400">Contact</TableHead>
                   <TableHead className="text-slate-400">Services</TableHead>
-                  <TableHead className="text-slate-400">Designer</TableHead>
+                  {!isDesigner && <TableHead className="text-slate-400">Designer</TableHead>}
                   <TableHead className="text-slate-400">Status</TableHead>
+                  {!isDesigner && <TableHead className="text-slate-400">Adv. Payment</TableHead>}
                   <TableHead className="text-slate-400">Payment</TableHead>
                   {canSeeFinance && <TableHead className="text-slate-400">Remaining</TableHead>}
                   <TableHead className="text-right text-slate-400">Actions</TableHead>
@@ -353,7 +368,7 @@ export default function OrdersPage() {
                   
                   return (
                     <TableRow key={order.id} className="border-slate-800 hover:bg-slate-900/50" data-testid={`row-order-${order.id}`}>
-                      {!isDesigner && <TableCell className="font-mono text-xs text-blue-400">{order.orderNumber}</TableCell>}
+                      <TableCell className="font-mono text-xs text-blue-400">{order.orderNumber}</TableCell>
                       <TableCell className="text-slate-400 text-xs">{format(new Date(order.createdAt!), "MMM dd, yyyy")}</TableCell>
                       <TableCell className="text-white font-medium">{order.clientName}</TableCell>
                       <TableCell>
@@ -384,14 +399,16 @@ export default function OrdersPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-slate-300 text-sm">{getServicesDisplay(order.services)}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-full bg-slate-800 flex items-center justify-center text-[10px] text-slate-400">
-                            {order.assignee?.name?.charAt(0) || "?"}
+                      {!isDesigner && (
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-slate-800 flex items-center justify-center text-[10px] text-slate-400">
+                              {order.assignee?.name?.charAt(0) || "?"}
+                            </div>
+                            <span className="text-sm text-slate-300">{order.assignee?.name || "Unassigned"}</span>
                           </div>
-                          <span className="text-sm text-slate-300">{order.assignee?.name || "Unassigned"}</span>
-                        </div>
-                      </TableCell>
+                        </TableCell>
+                      )}
                       <TableCell>
                         <Select 
                           defaultValue={order.status} 
@@ -407,6 +424,11 @@ export default function OrdersPage() {
                           </SelectContent>
                         </Select>
                       </TableCell>
+                      {!isDesigner && (
+                        <TableCell>
+                          {getAdvancePaymentStatusBadge(order.advancePaymentStatus)}
+                        </TableCell>
+                      )}
                       <TableCell>
                         <Select 
                           defaultValue={order.paymentStatus || "pending"} 
@@ -544,12 +566,13 @@ export default function OrdersPage() {
               <TableHeader className="bg-slate-900/50">
                 <TableRow className="border-slate-800">
                   <TableHead className="text-slate-400">Date Placed</TableHead>
-                  {!isDesigner && <TableHead className="text-slate-400">Order ID</TableHead>}
+                  <TableHead className="text-slate-400">Order ID</TableHead>
                   <TableHead className="text-slate-400">Client</TableHead>
                   <TableHead className="text-slate-400">Contact</TableHead>
                   <TableHead className="text-slate-400">Services</TableHead>
                   {!isDesigner && <TableHead className="text-slate-400">Designer</TableHead>}
                   <TableHead className="text-slate-400">Status</TableHead>
+                  {!isDesigner && <TableHead className="text-slate-400">Adv. Payment</TableHead>}
                   <TableHead className="text-slate-400">Payment</TableHead>
                   {canSeeFinance && <TableHead className="text-slate-400">Remaining</TableHead>}
                   <TableHead className="text-right text-slate-400">Actions</TableHead>
@@ -581,7 +604,7 @@ export default function OrdersPage() {
                   return (
                   <TableRow key={order.id} className="border-slate-800" data-testid={`row-monthly-order-${order.id}`}>
                     <TableCell className="text-slate-400 text-xs">{format(new Date(order.createdAt!), "MMM dd")}</TableCell>
-                    {!isDesigner && <TableCell className="font-mono text-xs text-blue-400">{order.orderNumber}</TableCell>}
+                    <TableCell className="font-mono text-xs text-blue-400">{order.orderNumber}</TableCell>
                     <TableCell className="text-white font-medium">{order.clientName}</TableCell>
                     <TableCell>
                       {order.clientPhone ? (
@@ -625,6 +648,11 @@ export default function OrdersPage() {
                         </SelectContent>
                       </Select>
                     </TableCell>
+                    {!isDesigner && (
+                      <TableCell>
+                        {getAdvancePaymentStatusBadge(order.advancePaymentStatus)}
+                      </TableCell>
+                    )}
                     <TableCell>
                       <Select 
                         defaultValue={order.paymentStatus || "pending"} 
