@@ -93,11 +93,15 @@ export default function DashboardPage() {
   const deliveredOrders = orders?.filter(o => o.status === 'delivered') || [];
   
   // Finance calculations (Admin only) - using new advance/remaining fields
-  const totalCollected = orders?.reduce((acc, o) => acc + (o.advanceAmount || 0), 0) || 0;
-  const totalBilled = orders?.reduce((acc, o) => acc + (o.totalPrice || 0), 0) || 0;
-  const outstandingBalance = orders?.reduce((acc, o) => acc + (o.remainingAmount || 0), 0) || 0;
-  const monthlyCollected = monthlyOrders.reduce((acc, o) => acc + (o.advanceAmount || 0), 0);
-  const monthlyRemaining = monthlyOrders.reduce((acc, o) => acc + (o.remainingAmount || 0), 0);
+  // ONLY include orders with approved payment status in finance calculations
+  const approvedOrders = orders?.filter(o => o.advancePaymentStatus === 'approved') || [];
+  const monthlyApprovedOrders = approvedOrders.filter(o => new Date(o.createdAt!) >= monthStart);
+  
+  const totalCollected = approvedOrders.reduce((acc, o) => acc + (o.advanceAmount || 0), 0);
+  const totalBilled = approvedOrders.reduce((acc, o) => acc + (o.totalPrice || 0), 0);
+  const outstandingBalance = approvedOrders.reduce((acc, o) => acc + (o.remainingAmount || 0), 0);
+  const monthlyCollected = monthlyApprovedOrders.reduce((acc, o) => acc + (o.advanceAmount || 0), 0);
+  const monthlyRemaining = monthlyApprovedOrders.reduce((acc, o) => acc + (o.remainingAmount || 0), 0);
 
   // Ready-based metrics (for Admin reports)
   const readyThisMonth = orders?.filter(o => o.readyDate && new Date(o.readyDate) >= monthStart) || [];

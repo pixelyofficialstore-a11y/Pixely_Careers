@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { api, errorSchemas } from "@shared/routes";
@@ -212,8 +212,16 @@ export async function registerRoutes(
       // Store intended designer but don't assign until payment is approved
       const intendedDesignerId = orderData.assignedToId;
       
+      // Store total price but set finance amounts to 0 until payment is approved
+      // Finance amounts will be updated only when payment is approved
+      const totalPrice = orderData.totalPrice || 0;
+      
       const order = await storage.createOrder({
         ...orderData,
+        totalPrice: totalPrice,
+        advanceAmount: 0, // No advance collected until payment approved
+        remainingAmount: totalPrice, // Full amount remains until payment approved (but won't count in finance until approved)
+        paymentStatus: "pending", // Will be updated automatically when payment approved
         assignedToId: null, // Don't assign until payment approved
         intendedDesignerId: intendedDesignerId || null, // Store intended designer for later assignment
         advancePaymentStatus: "pending", // Pending payment verification
@@ -416,7 +424,7 @@ export async function registerRoutes(
   });
 
   // Multer error handling middleware
-  const handleMulterError = (err: any, req: any, res: any, next: any) => {
+  const handleMulterError = (err: Error | null, req: Request, res: Response, next: NextFunction) => {
     if (err instanceof multer.MulterError) {
       if (err.code === 'LIMIT_FILE_SIZE') {
         return res.status(400).json({ error: 'File too large. Maximum size is 10MB.' });
@@ -524,6 +532,17 @@ export async function registerRoutes(
   });
 
   // === PAYMENT VERIFICATIONS ===
+  
+  // Get count of pending payment verifications (admin only, for notification badge)
+  app.get("/api/payment-verifications/pending-count", requireAuth, async (req, res) => {
+    const user = req.user as User;
+    if (user.role !== 'admin') {
+      return res.json({ count: 0 }); // Non-admins don't see pending count
+    }
+    const verifications = await storage.getPaymentVerifications("admin", 0);
+    const pendingCount = verifications.filter(v => v.status === 'pending_confirmation').length;
+    res.json({ count: pendingCount });
+  });
   
   // Get all payment verifications (role-based filtering)
   app.get("/api/payment-verifications", requireAuth, async (req, res) => {

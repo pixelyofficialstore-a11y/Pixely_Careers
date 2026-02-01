@@ -1,5 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
+import { useQuery } from "@tanstack/react-query";
 import { 
   LayoutDashboard, 
   MessageSquare, 
@@ -12,6 +13,7 @@ import {
   CreditCard
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
 
 import logoUrl from "@assets/rr__1500_x_500_px_-removebg-preview_1769451275347.png";
 
@@ -22,6 +24,14 @@ interface SidebarProps {
 export function Sidebar({ onNavigate }: SidebarProps) {
   const [location] = useLocation();
   const { user, logoutMutation } = useAuth();
+  
+  // Fetch pending payment count for admin notification badge
+  const { data: pendingPaymentData } = useQuery<{ count: number }>({
+    queryKey: ["/api/payment-verifications/pending-count"],
+    refetchInterval: 30000, // Refresh every 30 seconds
+    enabled: user?.role === "admin",
+  });
+  const pendingPaymentCount = pendingPaymentData?.count || 0;
 
   if (!user) return null;
 
@@ -55,6 +65,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
             {allowedLinks.map((link) => {
               const Icon = link.icon;
               const isActive = location === link.href;
+              const showBadge = link.href === "/payments" && user.role === "admin" && pendingPaymentCount > 0;
               return (
                 <Link 
                   key={link.href} 
@@ -68,7 +79,16 @@ export function Sidebar({ onNavigate }: SidebarProps) {
                   )}
                 >
                   <Icon className={cn("w-5 h-5", isActive ? "text-blue-400" : "text-slate-500 group-hover:text-white")} />
-                  {link.label}
+                  <span className="flex-1">{link.label}</span>
+                  {showBadge && (
+                    <Badge 
+                      variant="destructive" 
+                      className="h-5 min-w-[20px] px-1.5 text-xs font-bold"
+                      data-testid="badge-pending-payments"
+                    >
+                      {pendingPaymentCount}
+                    </Badge>
+                  )}
                 </Link>
               );
             })}

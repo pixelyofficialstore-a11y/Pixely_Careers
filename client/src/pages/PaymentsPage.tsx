@@ -89,6 +89,8 @@ export default function PaymentsPage() {
 
   const { data: verifications, isLoading } = useQuery<PaymentVerification[]>({
     queryKey: ["/api/payment-verifications"],
+    refetchInterval: 10000, // Refresh every 10 seconds to ensure fresh data
+    staleTime: 0, // Always consider data stale to ensure strict server-side filtering
   });
 
   const { data: orders } = useQuery<any[]>({

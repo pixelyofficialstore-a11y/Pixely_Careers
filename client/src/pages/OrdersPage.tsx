@@ -430,25 +430,16 @@ export default function OrdersPage() {
                         </TableCell>
                       )}
                       <TableCell>
-                        <Select 
-                          defaultValue={order.paymentStatus || "pending"} 
-                          onValueChange={(val) => updateOrderMutation.mutate({ id: order.id, updates: { paymentStatus: val } })}
+                        <Badge 
+                          variant="outline" 
+                          className={cn(
+                            "border-0",
+                            order.paymentStatus === 'paid' ? "text-green-500" : "text-yellow-500"
+                          )}
+                          data-testid={`badge-payment-${order.id}`}
                         >
-                          <SelectTrigger className="w-24 bg-transparent border-0 h-auto p-0 focus:ring-0 shadow-none hover:bg-white/5 rounded px-2 py-1" data-testid={`select-payment-${order.id}`}>
-                            <SelectValue>
-                              <Badge variant="outline" className={cn(
-                                "border-0",
-                                order.paymentStatus === 'paid' ? "text-green-500" : "text-yellow-500"
-                              )}>
-                                {order.paymentStatus === 'paid' ? "Paid" : "Pending"}
-                              </Badge>
-                            </SelectValue>
-                          </SelectTrigger>
-                          <SelectContent className="bg-slate-900 border-slate-800">
-                            <SelectItem value="pending">Pending</SelectItem>
-                            <SelectItem value="paid">Paid</SelectItem>
-                          </SelectContent>
-                        </Select>
+                          {order.paymentStatus === 'paid' ? "Paid" : "Pending"}
+                        </Badge>
                       </TableCell>
                       {canSeeFinance && (
                         <TableCell className="text-red-400 font-medium">
@@ -654,22 +645,13 @@ export default function OrdersPage() {
                       </TableCell>
                     )}
                     <TableCell>
-                      <Select 
-                        defaultValue={order.paymentStatus || "pending"} 
-                        onValueChange={(val) => updateOrderMutation.mutate({ id: order.id, updates: { paymentStatus: val } })}
+                      <Badge 
+                        variant="outline" 
+                        className={cn("border-0", order.paymentStatus === 'paid' ? "text-green-500" : "text-yellow-500")}
+                        data-testid={`badge-monthly-payment-${order.id}`}
                       >
-                        <SelectTrigger className="w-24 bg-transparent border-0 h-auto p-0 focus:ring-0 shadow-none hover:bg-white/5 rounded px-2 py-1" data-testid={`select-monthly-payment-${order.id}`}>
-                          <SelectValue>
-                            <Badge variant="outline" className={cn("border-0", order.paymentStatus === 'paid' ? "text-green-500" : "text-yellow-500")}>
-                              {order.paymentStatus === 'paid' ? "Paid" : "Pending"}
-                            </Badge>
-                          </SelectValue>
-                        </SelectTrigger>
-                        <SelectContent className="bg-slate-900 border-slate-800">
-                          <SelectItem value="pending">Pending</SelectItem>
-                          <SelectItem value="paid">Paid</SelectItem>
-                        </SelectContent>
-                      </Select>
+                        {order.paymentStatus === 'paid' ? "Paid" : "Pending"}
+                      </Badge>
                     </TableCell>
                     {canSeeFinance && (
                       <TableCell className="text-red-400 font-medium">
