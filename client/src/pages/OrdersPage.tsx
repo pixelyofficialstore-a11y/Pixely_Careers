@@ -145,7 +145,10 @@ export default function OrdersPage() {
     return matchesSearch;
   });
 
-  const todayOrders = filteredOrders?.filter(order => {
+  // Only count orders with approved payment status in all views
+  const approvedOrders = filteredOrders?.filter(order => order.advancePaymentStatus === 'approved') || [];
+  
+  const todayOrders = approvedOrders.filter(order => {
     const createdDate = new Date(order.createdAt!);
     const isActive = isToday(createdDate) || (order.status !== "delivered" && order.status !== "canceled");
     // Designers only see orders assigned to them (filter out unassigned)
@@ -155,7 +158,7 @@ export default function OrdersPage() {
     return isActive;
   });
 
-  const monthlyOrders = filteredOrders?.filter(order => {
+  const monthlyOrders = approvedOrders.filter(order => {
     const createdDate = new Date(order.createdAt!);
     const inMonth = createdDate.getMonth().toString() === selectedMonth;
     const inYear = createdDate.getFullYear().toString() === selectedYear;
@@ -327,6 +330,7 @@ export default function OrdersPage() {
               <h3 className="text-lg font-bold text-white">Today's Orders</h3>
               <p className="text-sm text-slate-500">Orders received or active today</p>
             </div>
+            <div className="table-scroll-wrapper">
             <Table>
               <TableHeader className="bg-slate-900/50">
                 <TableRow className="border-slate-800 hover:bg-transparent">
@@ -517,6 +521,7 @@ export default function OrdersPage() {
                 )}
               </TableBody>
             </Table>
+            </div>
           </div>
         </TabsContent>
 
@@ -553,6 +558,7 @@ export default function OrdersPage() {
               </div>
             </div>
             
+            <div className="table-scroll-wrapper">
             <Table>
               <TableHeader className="bg-slate-900/50">
                 <TableRow className="border-slate-800">
@@ -697,6 +703,7 @@ export default function OrdersPage() {
                 )}
               </TableBody>
             </Table>
+            </div>
           </div>
         </TabsContent>
       </Tabs>

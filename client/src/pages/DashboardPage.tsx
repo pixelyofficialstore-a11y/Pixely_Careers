@@ -82,19 +82,22 @@ export default function DashboardPage() {
   const isDesigner = user?.role === "designer";
 
   // Filter orders for dashboard stats
+  // ONLY include orders with approved payment status in ALL calculations
   const now = new Date();
   const monthStart = startOfMonth(now);
   
-  const todayOrders = orders?.filter(o => isToday(new Date(o.createdAt!))) || [];
-  const monthlyOrders = orders?.filter(o => new Date(o.createdAt!) >= monthStart) || [];
-  const pendingOrders = orders?.filter(o => o.status === 'new' || o.status === 'working') || [];
-  const canceledOrders = orders?.filter(o => o.status === 'canceled') || [];
-  const readyOrders = orders?.filter(o => o.status === 'ready') || [];
-  const deliveredOrders = orders?.filter(o => o.status === 'delivered') || [];
+  // All active/approved orders (payment verified)
+  const approvedOrders = orders?.filter(o => o.advancePaymentStatus === 'approved') || [];
+  
+  // For counts - only count approved orders
+  const todayOrders = approvedOrders.filter(o => isToday(new Date(o.createdAt!)));
+  const monthlyOrders = approvedOrders.filter(o => new Date(o.createdAt!) >= monthStart);
+  const pendingOrders = approvedOrders.filter(o => o.status === 'new' || o.status === 'working');
+  const canceledOrders = orders?.filter(o => o.status === 'canceled') || []; // Canceled can be any status
+  const readyOrders = approvedOrders.filter(o => o.status === 'ready');
+  const deliveredOrders = approvedOrders.filter(o => o.status === 'delivered');
   
   // Finance calculations (Admin only) - using new advance/remaining fields
-  // ONLY include orders with approved payment status in finance calculations
-  const approvedOrders = orders?.filter(o => o.advancePaymentStatus === 'approved') || [];
   const monthlyApprovedOrders = approvedOrders.filter(o => new Date(o.createdAt!) >= monthStart);
   
   const totalCollected = approvedOrders.reduce((acc, o) => acc + (o.advanceAmount || 0), 0);

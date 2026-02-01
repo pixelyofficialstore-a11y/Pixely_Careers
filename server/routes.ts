@@ -48,7 +48,7 @@ export async function registerRoutes(
         secure: process.env.NODE_ENV === "production",
         sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
         httpOnly: true,
-        maxAge: 24 * 60 * 60 * 1000, // 24 hours
+        maxAge: 365 * 24 * 60 * 60 * 1000, // 1 year - stay logged in until manual sign out
       },
     })
   );
@@ -150,6 +150,71 @@ export async function registerRoutes(
       }
       throw err;
     }
+  });
+
+  // Upload own profile avatar (any authenticated user)
+  app.post("/api/users/me/avatar", requireAuth, async (req, res, next) => {
+    // Configure multer for avatar upload (specific to avatars directory)
+    const avatarsDir = path.join(process.cwd(), 'uploads', 'avatars');
+    if (!fs.existsSync(avatarsDir)) {
+      fs.mkdirSync(avatarsDir, { recursive: true });
+    }
+    
+    const avatarUpload = multer({
+      storage: multer.diskStorage({
+        destination: avatarsDir,
+        filename: (req, file, cb) => {
+          const user = req.user as User;
+          const ext = path.extname(file.originalname);
+          cb(null, `avatar-${user.id}-${Date.now()}${ext}`);
+        }
+      }),
+      limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit for avatars
+      fileFilter: (req, file, cb) => {
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+        if (allowedTypes.includes(file.mimetype)) {
+          cb(null, true);
+        } else {
+          cb(new Error('Invalid image type. Only JPEG, PNG, GIF, and WebP are allowed.'));
+        }
+      }
+    }).single('avatar');
+    
+    avatarUpload(req, res, async (err) => {
+      if (err) {
+        return res.status(400).json({ error: err.message });
+      }
+      
+      const user = req.user as User;
+      const file = req.file;
+      
+      if (!file) {
+        return res.status(400).json({ error: 'No file uploaded' });
+      }
+      
+      // Update user avatar URL
+      const avatarUrl = `/api/avatars/${file.filename}`;
+      const updatedUser = await storage.updateUser(user.id, { avatar: avatarUrl });
+      
+      res.json(updatedUser);
+    });
+  });
+
+  // Serve avatar files (public access for avatars)
+  app.get('/api/avatars/:filename', (req, res) => {
+    const filename = req.params.filename;
+    
+    // Validate filename to prevent directory traversal
+    if (!filename || filename.includes('..') || filename.includes('/')) {
+      return res.sendStatus(400);
+    }
+    
+    const filePath = path.join(process.cwd(), 'uploads', 'avatars', filename);
+    if (!fs.existsSync(filePath)) {
+      return res.sendStatus(404);
+    }
+    
+    res.sendFile(filePath);
   });
 
   // Orders

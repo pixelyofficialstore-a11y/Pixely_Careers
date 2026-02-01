@@ -1,6 +1,7 @@
+import { useState, useRef } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { 
   LayoutDashboard, 
   MessageSquare, 
@@ -9,11 +10,14 @@ import {
   BarChart3, 
   LogOut,
   Settings,
-  Bell,
-  CreditCard
+  CreditCard,
+  Camera
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 
 import logoUrl from "@assets/rr__1500_x_500_px_-removebg-preview_1769451275347.png";
 
@@ -24,6 +28,8 @@ interface SidebarProps {
 export function Sidebar({ onNavigate }: SidebarProps) {
   const [location] = useLocation();
   const { user, logoutMutation } = useAuth();
+  const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Fetch pending payment count for admin notification badge (only for admins)
   const isAdmin = user?.role === "admin";
@@ -34,6 +40,41 @@ export function Sidebar({ onNavigate }: SidebarProps) {
     retry: false, // Don't retry if fails (non-admin would get 403)
   });
   const pendingPaymentCount = pendingPaymentData?.count || 0;
+
+  // Avatar upload mutation
+  const avatarMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append('avatar', file);
+      const res = await fetch('/api/users/me/avatar', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Failed to upload avatar');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+      toast({ title: "Success", description: "Profile photo updated!" });
+      // Force page refresh to show new avatar
+      window.location.reload();
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to upload photo", variant: "destructive" });
+    },
+  });
+
+  const handleAvatarClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      avatarMutation.mutate(file);
+    }
+  };
 
   if (!user) return null;
 
@@ -98,17 +139,42 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         </div>
       </div>
       <div className="mt-auto p-6 border-t border-slate-800">
+        <input 
+          type="file" 
+          ref={fileInputRef}
+          onChange={handleFileChange}
+          accept="image/jpeg,image/png,image/gif,image/webp"
+          className="hidden"
+          data-testid="input-avatar-upload"
+        />
         <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700 text-slate-300 font-medium">
-            {user.name.charAt(0)}
-          </div>
+          <button 
+            onClick={handleAvatarClick}
+            className="relative group"
+            data-testid="button-change-avatar"
+            title="Click to change profile photo"
+          >
+            <Avatar className="w-10 h-10 border border-slate-700">
+              {user.avatar ? (
+                <AvatarImage src={user.avatar} alt={user.name} />
+              ) : null}
+              <AvatarFallback className="bg-slate-800 text-slate-300 font-medium">
+                {user.name.charAt(0)}
+              </AvatarFallback>
+            </Avatar>
+            <div className="absolute inset-0 bg-black/50 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+              <Camera className="w-4 h-4 text-white" />
+            </div>
+            {avatarMutation.isPending && (
+              <div className="absolute inset-0 bg-black/70 rounded-full flex items-center justify-center">
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              </div>
+            )}
+          </button>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-white truncate">{user.name}</p>
             <p className="text-xs text-slate-500 truncate capitalize">{user.role}</p>
           </div>
-          <button className="text-slate-400 hover:text-white transition-colors">
-            <Settings className="w-4 h-4" />
-          </button>
         </div>
         
         <button 

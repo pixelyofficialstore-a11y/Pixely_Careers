@@ -72,6 +72,13 @@ export default function PaymentsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [roleFilter, setRoleFilter] = useState("all");
+  
+  // Date filters
+  const currentDate = new Date();
+  const [filterMonth, setFilterMonth] = useState("all");
+  const [filterDay, setFilterDay] = useState("all");
+  const [filterYear, setFilterYear] = useState("all");
+  
   const [selectedPayment, setSelectedPayment] = useState<PaymentVerification | null>(null);
   const [approveNotes, setApproveNotes] = useState("");
   const [disapproveNotes, setDisapproveNotes] = useState("");
@@ -83,6 +90,18 @@ export default function PaymentsPage() {
   const [selectedOrderId, setSelectedOrderId] = useState("");
   const [remainingAmount, setRemainingAmount] = useState("");
   const [remainingScreenshot, setRemainingScreenshot] = useState<File | null>(null);
+  
+  // Generate year options (current year and 2 previous years)
+  const yearOptions = Array.from({ length: 3 }, (_, i) => (currentDate.getFullYear() - i).toString());
+  
+  // Month names for dropdown
+  const monthNames = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"
+  ];
+  
+  // Day options (1-31)
+  const dayOptions = Array.from({ length: 31 }, (_, i) => (i + 1).toString());
 
   const isAdmin = user?.role === "admin";
   const isDesigner = user?.role === "designer";
@@ -156,6 +175,15 @@ export default function PaymentsPage() {
     if (statusFilter !== "all" && v.status !== statusFilter) return false;
     if (typeFilter !== "all" && v.paymentType !== typeFilter) return false;
     if (roleFilter !== "all" && v.submittedBy?.role !== roleFilter) return false;
+    
+    // Date filters
+    if (filterYear !== "all" || filterMonth !== "all" || filterDay !== "all") {
+      const vDate = new Date(v.createdAt);
+      if (filterYear !== "all" && vDate.getFullYear().toString() !== filterYear) return false;
+      if (filterMonth !== "all" && vDate.getMonth().toString() !== filterMonth) return false;
+      if (filterDay !== "all" && vDate.getDate().toString() !== filterDay) return false;
+    }
+    
     return true;
   }) || [];
 
@@ -328,11 +356,50 @@ export default function PaymentsPage() {
               <SelectItem value="designer">Designer</SelectItem>
             </SelectContent>
           </Select>
+          
+          {/* Date Filters */}
+          <div className="flex items-center gap-2 border-l border-slate-700 pl-4 ml-2">
+            <span className="text-sm text-slate-400">Date:</span>
+            <Select value={filterMonth} onValueChange={setFilterMonth}>
+              <SelectTrigger className="w-32 bg-slate-950 border-slate-800 text-white" data-testid="select-filter-month">
+                <SelectValue placeholder="Month" />
+              </SelectTrigger>
+              <SelectContent className="bg-slate-900 border-slate-800 text-white">
+                <SelectItem value="all">All Months</SelectItem>
+                {monthNames.map((name, i) => (
+                  <SelectItem key={i} value={i.toString()}>{name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={filterDay} onValueChange={setFilterDay}>
+              <SelectTrigger className="w-24 bg-slate-950 border-slate-800 text-white" data-testid="select-filter-day">
+                <SelectValue placeholder="Day" />
+              </SelectTrigger>
+              <SelectContent className="bg-slate-900 border-slate-800 text-white">
+                <SelectItem value="all">All Days</SelectItem>
+                {dayOptions.map(day => (
+                  <SelectItem key={day} value={day}>{day}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={filterYear} onValueChange={setFilterYear}>
+              <SelectTrigger className="w-28 bg-slate-950 border-slate-800 text-white" data-testid="select-filter-year">
+                <SelectValue placeholder="Year" />
+              </SelectTrigger>
+              <SelectContent className="bg-slate-900 border-slate-800 text-white">
+                <SelectItem value="all">All Years</SelectItem>
+                {yearOptions.map(year => (
+                  <SelectItem key={year} value={year}>{year}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       )}
 
       {/* Payment Requests Table */}
       <div className="glass-panel rounded-2xl border border-slate-800 overflow-hidden">
+        <div className="table-scroll-wrapper">
         <Table>
           <TableHeader className="bg-slate-900/50">
             <TableRow className="border-slate-800">
@@ -427,6 +494,7 @@ export default function PaymentsPage() {
             )}
           </TableBody>
         </Table>
+        </div>
       </div>
 
       {/* Approve Dialog */}
