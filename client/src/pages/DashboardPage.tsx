@@ -89,11 +89,11 @@ export default function DashboardPage() {
   // All active/approved orders (payment verified)
   const approvedOrders = orders?.filter(o => o.advancePaymentStatus === 'approved') || [];
   
-  // For counts - only count approved orders
+  // For counts - only count approved orders (advancePaymentStatus='approved')
   const todayOrders = approvedOrders.filter(o => isToday(new Date(o.createdAt!)));
   const monthlyOrders = approvedOrders.filter(o => new Date(o.createdAt!) >= monthStart);
   const pendingOrders = approvedOrders.filter(o => o.status === 'new' || o.status === 'working');
-  const canceledOrders = orders?.filter(o => o.status === 'canceled') || []; // Canceled can be any status
+  const canceledOrders = approvedOrders.filter(o => o.status === 'canceled'); // Only approved orders that were canceled
   const readyOrders = approvedOrders.filter(o => o.status === 'ready');
   const deliveredOrders = approvedOrders.filter(o => o.status === 'delivered');
   
@@ -106,8 +106,8 @@ export default function DashboardPage() {
   const monthlyCollected = monthlyApprovedOrders.reduce((acc, o) => acc + (o.advanceAmount || 0), 0);
   const monthlyRemaining = monthlyApprovedOrders.reduce((acc, o) => acc + (o.remainingAmount || 0), 0);
 
-  // Ready-based metrics (for Admin reports)
-  const readyThisMonth = orders?.filter(o => o.readyDate && new Date(o.readyDate) >= monthStart) || [];
+  // Ready-based metrics (for Admin reports) - only approved orders
+  const readyThisMonth = approvedOrders.filter(o => o.readyDate && new Date(o.readyDate) >= monthStart);
 
   // Designer Dashboard
   if (isDesigner) {
