@@ -209,16 +209,17 @@ export async function registerRoutes(
       const orderNumber = await storage.generateOrderNumber();
       const user = req.user as User;
       
+      // Store intended designer but don't assign until payment is approved
+      const intendedDesignerId = orderData.assignedToId;
+      
       const order = await storage.createOrder({
         ...orderData,
+        assignedToId: null, // Don't assign until payment approved
+        intendedDesignerId: intendedDesignerId || null, // Store intended designer for later assignment
+        advancePaymentStatus: "pending", // Pending payment verification
         orderNumber,
         createdById: user.id,
       }, services);
-      
-      // Notify designer if assigned
-      if (order.assignedToId) {
-        await storage.createNotification(order.assignedToId, "assignment", `New order assigned: ${order.orderNumber}`, order.id, "order");
-      }
 
       res.status(201).json(order);
     } catch (err) {
@@ -654,27 +655,43 @@ export async function registerRoutes(
     const currentRemaining = order.remainingAmount || 0;
     
     if (verification.paymentType === 'advance') {
-      // Advance payment: add to advance amount and reduce remaining
+      // Advance payment: add to collected amount, set remaining, assign designer, set status
       const newAdvance = currentAdvance + verification.amount;
       const newRemaining = Math.max(0, (order.totalPrice || 0) - newAdvance);
       await storage.updateOrder(order.id, {
         advanceAmount: newAdvance,
         remainingAmount: newRemaining,
         paymentStatus: newRemaining === 0 ? "paid" : "pending",
+        advancePaymentStatus: "approved",
+        assignedToId: order.intendedDesignerId, // Assign to intended designer
+        status: "new", // Order is now active
       });
+      
+      // Notify designer of assignment
+      if (order.intendedDesignerId) {
+        await storage.createNotification(order.intendedDesignerId, "assignment", `New order assigned: ${order.orderNumber}`, order.id, "order");
+      }
     } else if (verification.paymentType === 'full') {
-      // Full payment: mark as fully paid
+      // Full payment: mark as fully paid, assign designer, set status
       await storage.updateOrder(order.id, {
         advanceAmount: order.totalPrice, // Full amount collected
         remainingAmount: 0,
         paymentStatus: "paid",
+        advancePaymentStatus: "approved",
+        assignedToId: order.intendedDesignerId, // Assign to intended designer
+        status: "new", // Order is now active
       });
+      
+      // Notify designer of assignment
+      if (order.intendedDesignerId) {
+        await storage.createNotification(order.intendedDesignerId, "assignment", `New order assigned: ${order.orderNumber}`, order.id, "order");
+      }
     } else if (verification.paymentType === 'remaining') {
-      // Remaining payment: add remaining to advance, clear remaining
+      // Remaining payment: add remaining to collected, clear remaining
       await storage.updateOrder(order.id, {
-        advanceAmount: currentAdvance + currentRemaining,
-        remainingAmount: 0,
-        paymentStatus: "paid",
+        advanceAmount: currentAdvance + verification.amount,
+        remainingAmount: Math.max(0, currentRemaining - verification.amount),
+        paymentStatus: (currentRemaining - verification.amount) <= 0 ? "paid" : "pending",
       });
     }
     
@@ -692,13 +709,29 @@ export async function registerRoutes(
     const verificationId = Number(req.params.id);
     const { notes } = req.body;
     
-    // Update verification status - no finance changes
+    // Get verification to find order
+    const verifications = await storage.getPaymentVerifications("admin", 0);
+    const verification = verifications.find(v => v.id === verificationId);
+    if (!verification) return res.sendStatus(404);
+    
+    // Update verification status
     await storage.updatePaymentVerification(verificationId, {
       status: "disapproved",
       reviewedById: user.id,
       reviewedAt: new Date(),
       notes,
     });
+    
+    // Get order and cancel it (for advance/full payments, not remaining)
+    if (verification.paymentType !== 'remaining') {
+      const order = await storage.getOrder(verification.orderId);
+      if (order) {
+        await storage.updateOrder(order.id, {
+          advancePaymentStatus: "disapproved",
+          status: "canceled",
+        });
+      }
+    }
     
     const updatedVerifications = await storage.getPaymentVerifications("admin", 0);
     res.json(updatedVerifications.find(v => v.id === verificationId));

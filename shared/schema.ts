@@ -10,6 +10,7 @@ export const chatStatuses = ["new", "changes", "satisfied", "issues"] as const;
 export const priorities = ["normal", "high", "urgent"] as const;
 export const paymentVerificationStatuses = ["pending_confirmation", "approved", "disapproved"] as const;
 export const paymentTypes = ["advance", "full", "remaining"] as const;
+export const advancePaymentStatuses = ["pending", "approved", "disapproved"] as const;
 export const messageTypes = ["text", "file", "system"] as const;
 export const activityTypes = ["status_change", "payment_change", "assignment", "note", "chat_tag", "verification"] as const;
 
@@ -40,6 +41,8 @@ export const orders = pgTable("orders", {
   assignedToId: integer("assigned_to_id").references(() => users.id), // Designer ID
   readyDate: timestamp("ready_date"), // Date when status changed to Ready - for reporting
   paymentStatus: text("payment_status").default("pending"), // "paid" or "pending"
+  advancePaymentStatus: text("advance_payment_status", { enum: advancePaymentStatuses }).default("pending"), // Advance payment verification status
+  intendedDesignerId: integer("intended_designer_id").references(() => users.id), // Designer to assign after payment approval
   totalPrice: integer("total_price").notNull().default(0), // In PKR (stored as integers)
   advanceAmount: integer("advance_amount").default(0), // Advance payment received
   remainingAmount: integer("remaining_amount").default(0), // Remaining balance
