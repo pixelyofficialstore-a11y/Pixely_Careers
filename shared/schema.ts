@@ -8,7 +8,8 @@ export const userRoles = ["admin", "support", "designer"] as const;
 export const orderStatuses = ["new", "working", "ready", "delivered", "canceled"] as const;
 export const chatStatuses = ["new", "changes", "satisfied", "issues"] as const;
 export const priorities = ["normal", "high", "urgent"] as const;
-export const paymentVerificationStatuses = ["pending", "confirmed", "rejected"] as const;
+export const paymentVerificationStatuses = ["pending_confirmation", "approved", "disapproved"] as const;
+export const paymentTypes = ["advance", "full", "remaining"] as const;
 export const messageTypes = ["text", "file", "system"] as const;
 export const activityTypes = ["status_change", "payment_change", "assignment", "note", "chat_tag", "verification"] as const;
 
@@ -125,10 +126,11 @@ export const activityLogs = pgTable("activity_logs", {
 export const paymentVerifications = pgTable("payment_verifications", {
   id: serial("id").primaryKey(),
   orderId: integer("order_id").notNull().references(() => orders.id),
+  paymentType: text("payment_type", { enum: paymentTypes }).notNull(), // advance, full, remaining
   amount: integer("amount").notNull(), // Amount being verified
   screenshotUrl: text("screenshot_url"), // URL to uploaded screenshot
   submittedById: integer("submitted_by_id").notNull().references(() => users.id),
-  status: text("status", { enum: paymentVerificationStatuses }).default("pending"),
+  status: text("status", { enum: paymentVerificationStatuses }).default("pending_confirmation"),
   reviewedById: integer("reviewed_by_id").references(() => users.id), // Admin who reviewed
   reviewedAt: timestamp("reviewed_at"),
   notes: text("notes"), // Admin notes on rejection/approval
