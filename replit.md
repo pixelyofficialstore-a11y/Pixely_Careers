@@ -162,6 +162,13 @@ All monetary values displayed in PKR (₨), stored as integers (cents) in the da
   - Order ID column visible to all roles (including designers)
   - Advance Payment Status ("Adv. Payment") column added (Admin/Support only, hidden from designers)
   - Designers only see orders assigned to them (unassigned orders are filtered out)
+  - Payment Status column is display-only (Badge, not editable dropdown) - changes automatically based on payment approval
+- Finance logic updates:
+  - Order creation sets advanceAmount=0, remainingAmount=totalPrice (no finance collected until payment approved)
+  - Dashboard finance calculations only include orders with advancePaymentStatus='approved'
+  - Prevents unapproved orders from appearing in collected/outstanding totals
+- Admin notification badge on sidebar Payments link showing pending payment request count
+- Strict payment request visibility: Designer/Support only see their own submitted requests (enforced server-side)
 
 ### Key Database Tables
 - **chats**: WhatsApp-ready chat records with tags, assignment, and linking to orders

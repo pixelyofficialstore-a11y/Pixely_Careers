@@ -25,11 +25,13 @@ export function Sidebar({ onNavigate }: SidebarProps) {
   const [location] = useLocation();
   const { user, logoutMutation } = useAuth();
   
-  // Fetch pending payment count for admin notification badge
+  // Fetch pending payment count for admin notification badge (only for admins)
+  const isAdmin = user?.role === "admin";
   const { data: pendingPaymentData } = useQuery<{ count: number }>({
     queryKey: ["/api/payment-verifications/pending-count"],
     refetchInterval: 30000, // Refresh every 30 seconds
-    enabled: user?.role === "admin",
+    enabled: isAdmin, // Only fetch for admin users
+    retry: false, // Don't retry if fails (non-admin would get 403)
   });
   const pendingPaymentCount = pendingPaymentData?.count || 0;
 
@@ -65,7 +67,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
             {allowedLinks.map((link) => {
               const Icon = link.icon;
               const isActive = location === link.href;
-              const showBadge = link.href === "/payments" && user.role === "admin" && pendingPaymentCount > 0;
+              const showBadge = link.href === "/payments" && isAdmin && pendingPaymentCount > 0;
               return (
                 <Link 
                   key={link.href} 

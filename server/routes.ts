@@ -534,11 +534,7 @@ export async function registerRoutes(
   // === PAYMENT VERIFICATIONS ===
   
   // Get count of pending payment verifications (admin only, for notification badge)
-  app.get("/api/payment-verifications/pending-count", requireAuth, async (req, res) => {
-    const user = req.user as User;
-    if (user.role !== 'admin') {
-      return res.json({ count: 0 }); // Non-admins don't see pending count
-    }
+  app.get("/api/payment-verifications/pending-count", requireRole(["admin"]), async (req, res) => {
     const verifications = await storage.getPaymentVerifications("admin", 0);
     const pendingCount = verifications.filter(v => v.status === 'pending_confirmation').length;
     res.json({ count: pendingCount });
