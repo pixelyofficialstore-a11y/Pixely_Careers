@@ -170,6 +170,15 @@ All monetary values displayed in PKR (₨), stored as integers (cents) in the da
 - Admin notification badge on sidebar Payments link showing pending payment request count
 - Strict payment request visibility: Designer/Support only see their own submitted requests (enforced server-side)
 
+### UX & Session Improvements (February 2026)
+- Order counting logic updated: Only orders with advancePaymentStatus='approved' are included in all dashboard/order counts (daily, monthly, pending, canceled, ready, delivered)
+- Date filtering added to PaymentsPage with month/day/year dropdown selectors (admin-only)
+- Profile photo upload: All users can upload/update their avatar via Sidebar with endpoint POST /api/users/me/avatar
+  - Avatars stored in uploads/avatars directory
+  - Served via /api/avatars/:filename endpoint (public access)
+- Table scrollbar UX improved with custom CSS class (table-scroll-wrapper) providing better visibility and accessibility
+- Session timeout extended from 24 hours to 1 year (365 days) - users stay logged in until manual sign-out
+
 ### Key Database Tables
 - **chats**: WhatsApp-ready chat records with tags, assignment, and linking to orders
 - **messages**: Chat messages with file attachment support
