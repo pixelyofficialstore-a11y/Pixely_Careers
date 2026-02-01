@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Loader2 } from "lucide-react";
+import { Loader2, Eye, EyeOff } from "lucide-react";
 import { useLocation } from "wouter";
 
 import logoUrl from "@assets/rr__1500_x_500_px_-removebg-preview_1769447899946.png";
@@ -16,6 +16,7 @@ const loginSchema = z.object({
 export default function AuthPage() {
   const { user, loginMutation } = useAuth();
   const [, setLocation] = useLocation();
+  const [showPassword, setShowPassword] = useState(false);
   
   if (user) {
     setLocation("/");
@@ -63,12 +64,23 @@ export default function AuthPage() {
             
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-300">Password</label>
-              <input
-                type="password"
-                {...form.register("password")}
-                className="w-full px-4 py-3 rounded-xl bg-slate-950/50 border border-slate-800 text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
-                placeholder="Enter your password"
-              />
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  {...form.register("password")}
+                  className="w-full px-4 py-3 pr-12 rounded-xl bg-slate-950/50 border border-slate-800 text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                  placeholder="Enter your password"
+                  data-testid="input-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors"
+                  data-testid="button-toggle-password"
+                >
+                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
+              </div>
               {form.formState.errors.password && (
                 <p className="text-red-400 text-xs">{form.formState.errors.password.message}</p>
               )}
