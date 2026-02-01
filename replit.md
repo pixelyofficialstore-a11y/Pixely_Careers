@@ -124,6 +124,13 @@ All monetary values displayed in PKR (₨), stored as integers (cents) in the da
 - Finance fields hidden from non-admin users via API sanitization
 - All monetary values stored as integers (PKR paisa) and displayed in PKR (₨)
 
+### Recent Updates (February 2026)
+- PDF Export functionality added (Admin-only) for Orders, Designer Performance, and Marketing Analytics
+- Uses jsPDF with autoTable plugin for formatted PDF reports
+- Mobile navigation bar with hamburger menu, overlay sidebar, and responsive design
+- Sidebar auto-closes on navigation in mobile view via onNavigate callback
+- Main content area uses overflow-y-auto for scrollable pages
+
 ### Key Database Tables
 - **chats**: WhatsApp-ready chat records with tags, assignment, and linking to orders
 - **messages**: Chat messages with file attachment support

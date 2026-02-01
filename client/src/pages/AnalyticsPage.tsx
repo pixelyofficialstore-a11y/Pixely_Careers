@@ -32,9 +32,13 @@ import {
   Calendar as CalendarIcon,
   Megaphone,
   Layers,
-  Palette
+  Palette,
+  Download
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 interface OrderService {
   id: number;
@@ -107,6 +111,11 @@ function StatCard({
 export default function AnalyticsPage() {
   const { user } = useAuth();
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth().toString());
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString());
+  const [marketingMonth, setMarketingMonth] = useState(new Date().getMonth().toString());
+  const [marketingYear, setMarketingYear] = useState(new Date().getFullYear().toString());
+  const [performanceMonth, setPerformanceMonth] = useState(new Date().getMonth().toString());
+  const [performanceYear, setPerformanceYear] = useState(new Date().getFullYear().toString());
   
   const { data: orders, isLoading } = useQuery<OrderWithServices[]>({
     queryKey: ["/api/orders"],
@@ -174,57 +183,70 @@ export default function AnalyticsPage() {
     };
   };
 
-  // Marketing Analytics Calculations
+  // Filter orders by selected month/year for marketing analytics
+  const marketingOrders = orders?.filter(o => {
+    const createdDate = new Date(o.createdAt!);
+    return createdDate.getMonth().toString() === marketingMonth && 
+           createdDate.getFullYear().toString() === marketingYear;
+  }) || [];
+
+  // Filter orders by selected month/year for performance analytics
+  const performanceOrders = orders?.filter(o => {
+    if (!o.readyDate) return false;
+    const readyDate = new Date(o.readyDate);
+    return readyDate.getMonth().toString() === performanceMonth && 
+           readyDate.getFullYear().toString() === performanceYear;
+  }) || [];
+
+  // Marketing Analytics Calculations - simplified to show just order counts
   const getCampaignMetrics = () => {
     const campaigns = new Map<string, {
       total: number;
-      paid: number;
-      pending: number;
       adSets: Map<string, {
         total: number;
-        paid: number;
-        pending: number;
-        creatives: Map<string, { total: number; paid: number; pending: number }>;
+        creatives: Map<string, { total: number }>;
       }>;
     }>();
     
-    orders?.forEach(order => {
+    marketingOrders.forEach(order => {
       const campaignName = order.campaign || "Uncategorized";
       const adSetName = order.adSet || "No Ad Set";
       const creativeName = order.creative || "No Creative";
       
       if (!campaigns.has(campaignName)) {
-        campaigns.set(campaignName, { total: 0, paid: 0, pending: 0, adSets: new Map() });
+        campaigns.set(campaignName, { total: 0, adSets: new Map() });
       }
       
       const campaign = campaigns.get(campaignName)!;
       campaign.total++;
-      if (order.paymentStatus === 'paid') campaign.paid++;
-      else campaign.pending++;
       
       if (!campaign.adSets.has(adSetName)) {
-        campaign.adSets.set(adSetName, { total: 0, paid: 0, pending: 0, creatives: new Map() });
+        campaign.adSets.set(adSetName, { total: 0, creatives: new Map() });
       }
       
       const adSet = campaign.adSets.get(adSetName)!;
       adSet.total++;
-      if (order.paymentStatus === 'paid') adSet.paid++;
-      else adSet.pending++;
       
       if (!adSet.creatives.has(creativeName)) {
-        adSet.creatives.set(creativeName, { total: 0, paid: 0, pending: 0 });
+        adSet.creatives.set(creativeName, { total: 0 });
       }
       
       const creative = adSet.creatives.get(creativeName)!;
       creative.total++;
-      if (order.paymentStatus === 'paid') creative.paid++;
-      else creative.pending++;
     });
     
     return campaigns;
   };
 
   const campaignMetrics = getCampaignMetrics();
+
+  // Get designer metrics for specific month/year
+  const getDesignerMetricsMonthly = (designerId: number) => {
+    const completedOrders = performanceOrders.filter(o => o.assignedToId === designerId);
+    return {
+      completedThisMonth: completedOrders.length,
+    };
+  };
   
   // Top summary stats
   const totalCompletedToday = orders?.filter(o => o.readyDate && isToday(new Date(o.readyDate))).length || 0;
@@ -243,6 +265,60 @@ export default function AnalyticsPage() {
     .map(([name, data]) => ({ name, ...data }))
     .sort((a, b) => b.total - a.total);
   const bestCampaign = campaignArray[0];
+
+  const exportDesignerPDF = () => {
+    const doc = new jsPDF();
+    const monthName = format(new Date(parseInt(performanceYear), parseInt(performanceMonth), 1), "MMMM yyyy");
+    
+    doc.setFontSize(18);
+    doc.text(`Designer Performance Report - ${monthName}`, 14, 22);
+    doc.setFontSize(11);
+    doc.text(`Generated: ${format(new Date(), "MMM dd, yyyy h:mm a")}`, 14, 32);
+    
+    const tableData = designers.map(d => {
+      const metrics = getDesignerMetricsMonthly(d.id);
+      return [d.name, metrics.completedThisMonth];
+    });
+
+    autoTable(doc, {
+      startY: 40,
+      head: [["Designer", "Completions"]],
+      body: tableData,
+      headStyles: { fillColor: [37, 99, 235] }
+    });
+
+    doc.save(`designer-performance-${monthName.replace(" ", "-")}.pdf`);
+  };
+
+  const exportMarketingPDF = () => {
+    const doc = new jsPDF();
+    const monthName = format(new Date(parseInt(marketingYear), parseInt(marketingMonth), 1), "MMMM yyyy");
+    
+    doc.setFontSize(18);
+    doc.text(`Marketing Analytics Report - ${monthName}`, 14, 22);
+    doc.setFontSize(11);
+    doc.text(`Generated: ${format(new Date(), "MMM dd, yyyy h:mm a")}`, 14, 32);
+    
+    const tableData: (string | number)[][] = [];
+    campaignMetrics.forEach((campaign, campaignName) => {
+      tableData.push([campaignName, "", "", campaign.total]);
+      campaign.adSets.forEach((adSet, adSetName) => {
+        tableData.push(["", adSetName, "", adSet.total]);
+        adSet.creatives.forEach((creative, creativeName) => {
+          tableData.push(["", "", creativeName, creative.total]);
+        });
+      });
+    });
+
+    autoTable(doc, {
+      startY: 40,
+      head: [["Campaign", "Ad Set", "Creative", "Orders"]],
+      body: tableData,
+      headStyles: { fillColor: [37, 99, 235] }
+    });
+
+    doc.save(`marketing-analytics-${monthName.replace(" ", "-")}.pdf`);
+  };
 
   return (
     <div className="p-8 space-y-8">
@@ -296,14 +372,92 @@ export default function AnalyticsPage() {
         {/* Designer Performance Tab */}
         <TabsContent value="designers">
           <div className="space-y-6">
-            {/* Daily Performance */}
+            {/* Monthly Performance Filter */}
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <CalendarIcon className="w-4 h-4 text-slate-400" />
+                <Select value={performanceMonth} onValueChange={setPerformanceMonth}>
+                  <SelectTrigger className="w-32 bg-slate-900 border-slate-800 text-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-slate-900 border-slate-800">
+                    {["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"].map((month, idx) => (
+                      <SelectItem key={idx} value={idx.toString()} className="text-slate-300">{month}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={performanceYear} onValueChange={setPerformanceYear}>
+                  <SelectTrigger className="w-24 bg-slate-900 border-slate-800 text-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-slate-900 border-slate-800">
+                    {[2024, 2025, 2026, 2027].map((year) => (
+                      <SelectItem key={year} value={year.toString()} className="text-slate-300">{year}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-sm text-slate-500">{performanceOrders.length} completed orders</p>
+              </div>
+              <Button variant="outline" onClick={exportDesignerPDF} data-testid="button-export-designer-pdf">
+                <Download className="w-4 h-4 mr-2" />
+                Export PDF
+              </Button>
+            </div>
+
+            {/* Monthly Performance */}
             <div className="glass-panel rounded-2xl border border-slate-800 overflow-hidden">
               <div className="p-6 border-b border-slate-800">
                 <h3 className="text-lg font-bold text-white flex items-center gap-2">
                   <BarChart3 className="w-5 h-5 text-blue-500" />
-                  Designer Performance Report
+                  Monthly Designer Performance
                 </h3>
-                <p className="text-sm text-slate-500">Performance based on order completion (Working → Ready)</p>
+                <p className="text-sm text-slate-500">Completed orders for selected month (based on Ready date)</p>
+              </div>
+              <Table>
+                <TableHeader className="bg-slate-900/50">
+                  <TableRow className="border-slate-800">
+                    <TableHead className="text-slate-400">Designer</TableHead>
+                    <TableHead className="text-slate-400 text-center">Completed Orders</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {designers.map((designer) => {
+                    const monthlyMetrics = getDesignerMetricsMonthly(designer.id);
+                    return (
+                      <TableRow key={designer.id} className="border-slate-800">
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-sm text-slate-300">
+                              {designer.name.charAt(0)}
+                            </div>
+                            <span className="text-white font-medium">{designer.name}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <span className="text-2xl font-bold text-blue-400">{monthlyMetrics.completedThisMonth}</span>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  {designers.length === 0 && (
+                    <TableRow className="border-slate-800">
+                      <TableCell colSpan={2} className="text-center text-slate-500 py-8">
+                        No designers found
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+
+            {/* Overall Performance */}
+            <div className="glass-panel rounded-2xl border border-slate-800 overflow-hidden">
+              <div className="p-6 border-b border-slate-800">
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <BarChart3 className="w-5 h-5 text-blue-500" />
+                  Overall Designer Performance
+                </h3>
+                <p className="text-sm text-slate-500">All-time performance based on order completion (Working → Ready)</p>
               </div>
               <Table>
                 <TableHeader className="bg-slate-900/50">
@@ -375,6 +529,38 @@ export default function AnalyticsPage() {
         {/* Marketing Analytics Tab */}
         <TabsContent value="marketing">
           <div className="space-y-6">
+            {/* Month/Year Filter */}
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <CalendarIcon className="w-4 h-4 text-slate-400" />
+                <Select value={marketingMonth} onValueChange={setMarketingMonth}>
+                  <SelectTrigger className="w-32 bg-slate-900 border-slate-800 text-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-slate-900 border-slate-800">
+                    {["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"].map((month, idx) => (
+                      <SelectItem key={idx} value={idx.toString()} className="text-slate-300">{month}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={marketingYear} onValueChange={setMarketingYear}>
+                  <SelectTrigger className="w-24 bg-slate-900 border-slate-800 text-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-slate-900 border-slate-800">
+                    {[2024, 2025, 2026, 2027].map((year) => (
+                      <SelectItem key={year} value={year.toString()} className="text-slate-300">{year}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-sm text-slate-500">{marketingOrders.length} orders</p>
+              </div>
+              <Button variant="outline" onClick={exportMarketingPDF} data-testid="button-export-marketing-pdf">
+                <Download className="w-4 h-4 mr-2" />
+                Export PDF
+              </Button>
+            </div>
+
             {/* Campaign Performance */}
             <div className="glass-panel rounded-2xl border border-slate-800 overflow-hidden">
               <div className="p-6 border-b border-slate-800">
@@ -382,7 +568,7 @@ export default function AnalyticsPage() {
                   <Megaphone className="w-5 h-5 text-orange-500" />
                   Campaign Performance
                 </h3>
-                <p className="text-sm text-slate-500">Orders grouped by Campaign → Ad Set → Creative</p>
+                <p className="text-sm text-slate-500">Monthly orders grouped by Campaign → Ad Set → Creative</p>
               </div>
               
               <div className="divide-y divide-slate-800">
@@ -399,19 +585,9 @@ export default function AnalyticsPage() {
                           <p className="text-xs text-slate-500">Campaign</p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-4">
-                        <div className="text-center">
-                          <p className="text-lg font-bold text-white">{campaign.total}</p>
-                          <p className="text-xs text-slate-500">Total Orders</p>
-                        </div>
-                        <div className="text-center">
-                          <p className="text-lg font-bold text-green-500">{campaign.paid}</p>
-                          <p className="text-xs text-slate-500">Paid</p>
-                        </div>
-                        <div className="text-center">
-                          <p className="text-lg font-bold text-yellow-500">{campaign.pending}</p>
-                          <p className="text-xs text-slate-500">Pending</p>
-                        </div>
+                      <div className="text-center">
+                        <p className="text-2xl font-bold text-white">{campaign.total}</p>
+                        <p className="text-xs text-slate-500">Orders</p>
                       </div>
                     </div>
                     
@@ -424,11 +600,7 @@ export default function AnalyticsPage() {
                               <Layers className="w-4 h-4 text-blue-500" />
                               <span className="text-slate-300">{adSetName}</span>
                             </div>
-                            <div className="flex items-center gap-3 text-sm">
-                              <span className="text-slate-400">{adSet.total} orders</span>
-                              <Badge variant="outline" className="border-0 text-green-500">{adSet.paid} paid</Badge>
-                              <Badge variant="outline" className="border-0 text-yellow-500">{adSet.pending} pending</Badge>
-                            </div>
+                            <Badge variant="secondary" className="text-white">{adSet.total} orders</Badge>
                           </div>
                           
                           {/* Creatives */}
@@ -439,11 +611,7 @@ export default function AnalyticsPage() {
                                   <Palette className="w-3 h-3 text-purple-500" />
                                   <span className="text-slate-400">{creativeName}</span>
                                 </div>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-slate-500">{creative.total}</span>
-                                  <span className="text-green-500/70">{creative.paid}p</span>
-                                  <span className="text-yellow-500/70">{creative.pending}u</span>
-                                </div>
+                                <span className="text-slate-300">{creative.total}</span>
                               </div>
                             ))}
                           </div>
@@ -455,7 +623,7 @@ export default function AnalyticsPage() {
                 
                 {campaignArray.length === 0 && (
                   <div className="p-8 text-center text-slate-500">
-                    No campaign data available. Tag orders with campaigns to see analytics.
+                    No campaign data available for this month. Tag orders with campaigns to see analytics.
                   </div>
                 )}
               </div>

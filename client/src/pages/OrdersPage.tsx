@@ -50,8 +50,11 @@ import {
   Check,
   MessageSquare,
   FileText,
-  History
+  History,
+  Download
 } from "lucide-react";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -88,6 +91,7 @@ export default function OrdersPage() {
   const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth().toString());
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString());
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<OrderWithServices | null>(null);
   const [detailsSheetOpen, setDetailsSheetOpen] = useState(false);
@@ -147,11 +151,13 @@ export default function OrdersPage() {
   });
 
   const monthlyOrders = filteredOrders?.filter(order => {
-    const inMonth = new Date(order.createdAt!).getMonth().toString() === selectedMonth;
+    const createdDate = new Date(order.createdAt!);
+    const inMonth = createdDate.getMonth().toString() === selectedMonth;
+    const inYear = createdDate.getFullYear().toString() === selectedYear;
     if (isDesigner) {
-      return inMonth && order.assignedToId === user?.id;
+      return inMonth && inYear && order.assignedToId === user?.id;
     }
-    return inMonth;
+    return inMonth && inYear;
   });
 
   const getStatusBadge = (status: string) => {
@@ -190,6 +196,37 @@ export default function OrdersPage() {
   
   const canDelete = isAdmin || isSupport;
 
+  const exportOrdersPDF = () => {
+    const doc = new jsPDF();
+    const monthName = format(new Date(parseInt(selectedYear), parseInt(selectedMonth), 1), "MMMM yyyy");
+    
+    doc.setFontSize(18);
+    doc.text(`Orders Report - ${monthName}`, 14, 22);
+    doc.setFontSize(11);
+    doc.text(`Generated: ${format(new Date(), "MMM dd, yyyy h:mm a")}`, 14, 32);
+    
+    const tableData = monthlyOrders?.map(order => [
+      order.orderNumber,
+      format(new Date(order.createdAt!), "MMM dd"),
+      order.clientName,
+      order.clientPhone || "-",
+      order.services?.map(s => `${s.quantity}x ${s.serviceType}`).join(", ") || "-",
+      order.assignee?.name || "Unassigned",
+      order.status.charAt(0).toUpperCase() + order.status.slice(1),
+      order.paymentStatus === "paid" ? "Paid" : "Pending"
+    ]) || [];
+
+    autoTable(doc, {
+      startY: 40,
+      head: [["Order ID", "Date", "Client", "Phone", "Services", "Designer", "Status", "Payment"]],
+      body: tableData,
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [37, 99, 235] }
+    });
+
+    doc.save(`orders-${monthName.replace(" ", "-")}.pdf`);
+  };
+
   return (
     <div className="p-8 space-y-8">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -198,7 +235,7 @@ export default function OrdersPage() {
           <p className="text-slate-400">Manage ATS CV, LinkedIn, and Cover Letter requests.</p>
         </div>
         
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <div className="relative w-full md:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
             <Input 
@@ -209,6 +246,13 @@ export default function OrdersPage() {
               data-testid="input-search-orders"
             />
           </div>
+          
+          {isAdmin && (
+            <Button variant="outline" onClick={exportOrdersPDF} data-testid="button-export-orders">
+              <Download className="w-4 h-4 mr-2" />
+              Export PDF
+            </Button>
+          )}
           
           {canCreateOrder && (
             <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
@@ -272,7 +316,7 @@ export default function OrdersPage() {
             <Table>
               <TableHeader className="bg-slate-900/50">
                 <TableRow className="border-slate-800 hover:bg-transparent">
-                  <TableHead className="text-slate-400">Order ID</TableHead>
+                  {!isDesigner && <TableHead className="text-slate-400">Order ID</TableHead>}
                   <TableHead className="text-slate-400">Date Placed</TableHead>
                   <TableHead className="text-slate-400">Client</TableHead>
                   <TableHead className="text-slate-400">Contact</TableHead>
@@ -287,27 +331,29 @@ export default function OrdersPage() {
               <TableBody>
                 {todayOrders?.map((order) => {
                   const isDesignerUser = user?.role === 'designer';
-                  // Designers can change: New→Working→Ready→Delivered (forward only, no cancel)
+                  // All roles can see all status options
                   const getStatusOptions = () => {
-                    if (isAdmin || isSupport) {
+                    // Designers can't cancel orders
+                    if (isDesignerUser) {
                       return [
                         { value: "new", label: "New" },
                         { value: "working", label: "Working" },
                         { value: "ready", label: "Ready" },
                         { value: "delivered", label: "Delivered" },
-                        { value: "canceled", label: "Canceled" },
                       ];
                     }
-                    // Designer restrictions - forward workflow only
-                    if (order.status === 'new') return [{ value: "new", label: "New" }, { value: "working", label: "Working" }];
-                    if (order.status === 'working') return [{ value: "working", label: "Working" }, { value: "ready", label: "Ready" }];
-                    if (order.status === 'ready') return [{ value: "ready", label: "Ready" }, { value: "delivered", label: "Delivered" }];
-                    return [{ value: order.status, label: order.status.charAt(0).toUpperCase() + order.status.slice(1) }];
+                    return [
+                      { value: "new", label: "New" },
+                      { value: "working", label: "Working" },
+                      { value: "ready", label: "Ready" },
+                      { value: "delivered", label: "Delivered" },
+                      { value: "canceled", label: "Canceled" },
+                    ];
                   };
                   
                   return (
                     <TableRow key={order.id} className="border-slate-800 hover:bg-slate-900/50" data-testid={`row-order-${order.id}`}>
-                      <TableCell className="font-mono text-xs text-blue-400">{order.orderNumber}</TableCell>
+                      {!isDesigner && <TableCell className="font-mono text-xs text-blue-400">{order.orderNumber}</TableCell>}
                       <TableCell className="text-slate-400 text-xs">{format(new Date(order.createdAt!), "MMM dd, yyyy")}</TableCell>
                       <TableCell className="text-white font-medium">{order.clientName}</TableCell>
                       <TableCell>
@@ -470,10 +516,20 @@ export default function OrdersPage() {
               </div>
               
               <div className="flex gap-2">
+                <Select value={selectedYear} onValueChange={setSelectedYear}>
+                  <SelectTrigger className="w-24 bg-slate-900 border-slate-800 text-white" data-testid="select-year">
+                    <SelectValue placeholder="Year" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-slate-900 border-slate-800 text-white">
+                    {[2024, 2025, 2026, 2027].map((year) => (
+                      <SelectItem key={year} value={year.toString()}>{year}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-                  <SelectTrigger className="w-40 bg-slate-900 border-slate-800 text-white" data-testid="select-month">
+                  <SelectTrigger className="w-36 bg-slate-900 border-slate-800 text-white" data-testid="select-month">
                     <CalendarIcon className="w-4 h-4 mr-2" />
-                    <SelectValue placeholder="Select month" />
+                    <SelectValue placeholder="Month" />
                   </SelectTrigger>
                   <SelectContent className="bg-slate-900 border-slate-800 text-white">
                     {Array.from({ length: 12 }).map((_, i) => (
@@ -488,7 +544,7 @@ export default function OrdersPage() {
               <TableHeader className="bg-slate-900/50">
                 <TableRow className="border-slate-800">
                   <TableHead className="text-slate-400">Date Placed</TableHead>
-                  <TableHead className="text-slate-400">Order ID</TableHead>
+                  {!isDesigner && <TableHead className="text-slate-400">Order ID</TableHead>}
                   <TableHead className="text-slate-400">Client</TableHead>
                   <TableHead className="text-slate-400">Contact</TableHead>
                   <TableHead className="text-slate-400">Services</TableHead>
@@ -501,26 +557,31 @@ export default function OrdersPage() {
               </TableHeader>
               <TableBody>
                 {monthlyOrders?.map((order) => {
+                  const isDesignerUser = user?.role === 'designer';
+                  // All roles can see all status options
                   const getMonthlyStatusOptions = () => {
-                    if (isAdmin || isSupport) {
+                    // Designers can't cancel orders
+                    if (isDesignerUser) {
                       return [
                         { value: "new", label: "New" },
                         { value: "working", label: "Working" },
                         { value: "ready", label: "Ready" },
                         { value: "delivered", label: "Delivered" },
-                        { value: "canceled", label: "Canceled" },
                       ];
                     }
-                    if (order.status === 'new') return [{ value: "new", label: "New" }, { value: "working", label: "Working" }];
-                    if (order.status === 'working') return [{ value: "working", label: "Working" }, { value: "ready", label: "Ready" }];
-                    if (order.status === 'ready') return [{ value: "ready", label: "Ready" }, { value: "delivered", label: "Delivered" }];
-                    return [{ value: order.status, label: order.status.charAt(0).toUpperCase() + order.status.slice(1) }];
+                    return [
+                      { value: "new", label: "New" },
+                      { value: "working", label: "Working" },
+                      { value: "ready", label: "Ready" },
+                      { value: "delivered", label: "Delivered" },
+                      { value: "canceled", label: "Canceled" },
+                    ];
                   };
                   
                   return (
                   <TableRow key={order.id} className="border-slate-800" data-testid={`row-monthly-order-${order.id}`}>
                     <TableCell className="text-slate-400 text-xs">{format(new Date(order.createdAt!), "MMM dd")}</TableCell>
-                    <TableCell className="font-mono text-xs text-blue-400">{order.orderNumber}</TableCell>
+                    {!isDesigner && <TableCell className="font-mono text-xs text-blue-400">{order.orderNumber}</TableCell>}
                     <TableCell className="text-white font-medium">{order.clientName}</TableCell>
                     <TableCell>
                       {order.clientPhone ? (
@@ -642,7 +703,7 @@ export default function OrdersPage() {
             <div className="mt-6 space-y-6">
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-2xl font-bold text-blue-400 font-mono">{selectedOrder.orderNumber}</span>
+                  {!isDesigner && <span className="text-2xl font-bold text-blue-400 font-mono">{selectedOrder.orderNumber}</span>}
                   {getStatusBadge(selectedOrder.status)}
                 </div>
                 <p className="text-slate-400 text-sm">Created {format(new Date(selectedOrder.createdAt!), "MMMM dd, yyyy 'at' h:mm a")}</p>
@@ -735,7 +796,7 @@ export default function OrdersPage() {
                 </div>
               )}
 
-              {(selectedOrder.campaign || selectedOrder.adSet || selectedOrder.creative) && (
+              {!isDesigner && (selectedOrder.campaign || selectedOrder.adSet || selectedOrder.creative) && (
                 <div className="space-y-3 p-4 bg-slate-950 rounded-lg border border-slate-800">
                   <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Marketing Data</h4>
                   <div className="space-y-2">

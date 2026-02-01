@@ -14,7 +14,11 @@ import { cn } from "@/lib/utils";
 
 import logoUrl from "@assets/rr__1500_x_500_px_-removebg-preview_1769451275347.png";
 
-export function Sidebar() {
+interface SidebarProps {
+  onNavigate?: () => void;
+}
+
+export function Sidebar({ onNavigate }: SidebarProps) {
   const [location] = useLocation();
   const { user, logoutMutation } = useAuth();
 
@@ -31,8 +35,12 @@ export function Sidebar() {
 
   const allowedLinks = links.filter(link => link.roles.includes(user.role));
 
+  const handleLinkClick = () => {
+    if (onNavigate) onNavigate();
+  };
+
   return (
-    <aside className="hidden lg:flex flex-col w-64 bg-slate-950 border-r border-slate-800 h-screen fixed left-0 top-0 z-50">
+    <aside className="flex flex-col w-64 bg-slate-950 border-r border-slate-800 h-screen">
       <div className="p-6">
         <div className="flex items-center gap-3 mb-8">
           <img src={logoUrl} alt="PixelCRM" className="h-8 w-auto" />
@@ -46,12 +54,17 @@ export function Sidebar() {
               const Icon = link.icon;
               const isActive = location === link.href;
               return (
-                <Link key={link.href} href={link.href} className={cn(
-                  "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 group",
-                  isActive 
-                    ? "bg-blue-600/10 text-blue-400" 
-                    : "text-slate-400 hover:text-white hover:bg-slate-900"
-                )}>
+                <Link 
+                  key={link.href} 
+                  href={link.href} 
+                  onClick={handleLinkClick}
+                  className={cn(
+                    "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 group",
+                    isActive 
+                      ? "bg-blue-600/10 text-blue-400" 
+                      : "text-slate-400 hover:text-white hover:bg-slate-900"
+                  )}
+                >
                   <Icon className={cn("w-5 h-5", isActive ? "text-blue-400" : "text-slate-500 group-hover:text-white")} />
                   {link.label}
                 </Link>
