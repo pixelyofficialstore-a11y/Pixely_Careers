@@ -64,8 +64,10 @@ Three user roles with distinct permissions:
 ## External Dependencies
 
 ### Database
-- **PostgreSQL**: Primary database, connection via `DATABASE_URL` environment variable
+- **PostgreSQL**: Primary database hosted on **Supabase**
+- **Connection**: Uses `SUPABASE_DATABASE_URL` environment variable (falls back to `DATABASE_URL`)
 - **connect-pg-simple**: Session storage in PostgreSQL
+- **Drizzle ORM**: Schema management with `npm run db:push` for migrations
 
 ### UI Libraries
 - **Radix UI**: Full suite of accessible primitives (dialog, select, tabs, etc.)
