@@ -1015,15 +1015,24 @@ export async function registerRoutes(
     res.json({ success: true, message: storedMessage });
   });
 
+  // Zod schema for WhatsApp template sending
+  const sendWhatsAppTemplateSchema = z.object({
+    templateName: z.string().min(1, "Template name is required").max(512, "Template name too long"),
+    languageCode: z.string().max(10).optional().default("en"),
+    components: z.array(z.any()).optional()
+  });
+
   // Endpoint to send WhatsApp template message
   app.post("/api/chats/:id/send-whatsapp-template", requireAuth, async (req: Request, res: Response) => {
     const chatId = Number(req.params.id);
     const user = req.user as User;
-    const { templateName, languageCode, components } = req.body;
 
-    if (!templateName) {
-      return res.status(400).json({ error: "Template name is required" });
+    // Validate request body
+    const parseResult = sendWhatsAppTemplateSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return res.status(400).json({ error: parseResult.error.errors[0]?.message || "Invalid request" });
     }
+    const { templateName, languageCode, components } = parseResult.data;
 
     const chat = await storage.getChat(chatId);
     if (!chat) {
@@ -1073,7 +1082,19 @@ export async function registerRoutes(
   // Serve WhatsApp media files
   app.get("/api/whatsapp-media/:filename", requireAuth, (req: Request, res: Response) => {
     const filename = req.params.filename as string;
+    
+    // Validate filename to prevent path traversal attacks
+    if (!filename || filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+      return res.sendStatus(400);
+    }
+    
     const filePath = path.join(whatsappUploadsDir, filename);
+    
+    // Ensure resolved path is within the uploads directory
+    const resolvedPath = path.resolve(filePath);
+    if (!resolvedPath.startsWith(path.resolve(whatsappUploadsDir))) {
+      return res.sendStatus(403);
+    }
     
     if (!fs.existsSync(filePath)) {
       return res.sendStatus(404);
