@@ -108,7 +108,8 @@ All monetary values displayed in PKR (₨), stored as integers (cents) in the da
 
 ### WhatsApp Module (February 2026)
 - Renamed "Chats" section to "WhatsApp" with WhatsApp icon in sidebar
-- Route changed from /chats to /whatsapp
+- Route changed from /chats to /whatsapp; opens in new tab when clicked
+- Exact WhatsApp Web UI design with dark theme (#0b141a, #111b21, #202c33, #00a884 green accents)
 - Full chat UI with chat list sidebar and messaging interface
 - Tab navigation: All Chats, New (with unread count), By Designer grouping
 - Search functionality to filter by client name or phone number
