@@ -140,7 +140,7 @@ export default function OrdersPage() {
 
   const filteredOrders = orders?.filter(order => {
     const matchesSearch = 
-      order.orderNumber.toLowerCase().includes(search.toLowerCase()) ||
+      (order.orderNumber?.toLowerCase().includes(search.toLowerCase()) ?? false) ||
       order.clientName.toLowerCase().includes(search.toLowerCase());
     return matchesSearch;
   });
@@ -154,12 +154,15 @@ export default function OrdersPage() {
   
   const todayOrders = visibleOrders.filter(order => {
     const createdDate = new Date(order.createdAt!);
-    const isActive = isToday(createdDate) || (order.status !== "delivered" && order.status !== "canceled");
+    // Only show orders created today
+    if (!isToday(createdDate)) {
+      return false;
+    }
     // Designers only see orders assigned to them (filter out unassigned)
     if (isDesigner && order.assignedToId !== user?.id) {
       return false;
     }
-    return isActive;
+    return true;
   });
 
   const monthlyOrders = visibleOrders.filter(order => {
@@ -332,7 +335,7 @@ export default function OrdersPage() {
           <div className="glass-panel rounded-2xl border border-slate-800 overflow-hidden">
             <div className="p-6 border-b border-slate-800">
               <h3 className="text-lg font-bold text-white">Today's Orders</h3>
-              <p className="text-sm text-slate-500">Orders received or active today</p>
+              <p className="text-sm text-slate-500">Orders created today</p>
             </div>
             <div className="table-scroll-wrapper">
             <Table>
