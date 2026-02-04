@@ -543,8 +543,8 @@ export default function WhatsAppPage() {
           )}
           {activeTab === "assigned" && (isAdmin || isSupport) && (
             <Select
-              value={designerFilter?.toString() || ""}
-              onValueChange={(val) => setDesignerFilter(val ? Number(val) : null)}
+              value={designerFilter?.toString() || "all"}
+              onValueChange={(val) => setDesignerFilter(val && val !== "all" ? Number(val) : null)}
             >
               <SelectTrigger 
                 className="w-36 h-8 text-xs border-none"
@@ -554,7 +554,7 @@ export default function WhatsAppPage() {
                 <SelectValue placeholder="All Designers" />
               </SelectTrigger>
               <SelectContent style={{ backgroundColor: "#202c33" }}>
-                <SelectItem value="">All Designers</SelectItem>
+                <SelectItem value="all">All Designers</SelectItem>
                 {designers.map(d => (
                   <SelectItem key={d.id} value={d.id.toString()}>
                     {d.name}
@@ -620,6 +620,7 @@ export default function WhatsAppPage() {
               const isSelected = selectedChat?.id === chat.id;
               const unreadCount = chat.unreadCount || 0;
               const primaryTag = (chat.tags as string[] || [])[0];
+              const assignedDesigner = teamMembers?.find(u => u.id === chat.assignedToId);
               
               return (
                 <button
@@ -632,20 +633,41 @@ export default function WhatsAppPage() {
                   style={{ borderBottom: "1px solid #222d34" }}
                   data-testid={`chat-item-${chat.id}`}
                 >
-                  {/* Avatar */}
-                  <div 
-                    className="w-12 h-12 rounded-full flex items-center justify-center text-white font-medium text-lg flex-shrink-0"
-                    style={{ backgroundColor: getAvatarColor(displayName) }}
-                  >
-                    {displayName.charAt(0).toUpperCase()}
+                  {/* Avatar with assignment indicator */}
+                  <div className="relative flex-shrink-0">
+                    <div 
+                      className="w-12 h-12 rounded-full flex items-center justify-center text-white font-medium text-lg"
+                      style={{ backgroundColor: getAvatarColor(displayName) }}
+                    >
+                      {displayName.charAt(0).toUpperCase()}
+                    </div>
+                    {assignedDesigner && (
+                      <div 
+                        className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold border-2"
+                        style={{ 
+                          backgroundColor: getAvatarColor(assignedDesigner.name),
+                          borderColor: "#111b21"
+                        }}
+                        title={`Assigned to ${assignedDesigner.name}`}
+                      >
+                        {assignedDesigner.name.charAt(0).toUpperCase()}
+                      </div>
+                    )}
                   </div>
                   
                   {/* Content */}
                   <div className="flex-1 min-w-0 text-left">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-white font-normal text-base truncate">
-                        {displayName}
-                      </span>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-white font-normal text-base truncate">
+                          {displayName}
+                        </span>
+                        {assignedDesigner && (isAdmin || isSupport) && (
+                          <span className="text-[10px] text-slate-500 flex-shrink-0">
+                            {assignedDesigner.name}
+                          </span>
+                        )}
+                      </div>
                       <span className="text-xs text-slate-500 flex-shrink-0">
                         {chat.lastMessageAt ? format(new Date(chat.lastMessageAt), "HH:mm") : ""}
                       </span>
