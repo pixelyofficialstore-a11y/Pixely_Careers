@@ -4,7 +4,6 @@ import { useAuth } from "@/hooks/use-auth";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
@@ -17,17 +16,20 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Search,
   Send,
-  MoreHorizontal,
-  ExternalLink,
-  Copy,
-  ChevronDown,
+  MoreVertical,
+  ArrowLeft,
   Paperclip,
   Check,
+  CheckCheck,
   X,
   File,
   LinkIcon,
   ImageIcon,
   CheckCircle,
+  Smile,
+  RefreshCw,
+  MessageSquarePlus,
+  Filter,
 } from "lucide-react";
 import { SiWhatsapp } from "react-icons/si";
 import {
@@ -35,6 +37,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { format } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -50,22 +53,19 @@ type ChatWithDetails = Chat & {
 
 const CHAT_TAGS = ["New", "Working", "Pending", "Changes", "Issues", "Satisfied Client"];
 
-const TAG_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
-  "New": { bg: "bg-blue-500/20", text: "text-blue-400", dot: "bg-blue-500" },
-  "Working": { bg: "bg-purple-500/20", text: "text-purple-400", dot: "bg-purple-500" },
-  "Pending": { bg: "bg-yellow-500/20", text: "text-yellow-400", dot: "bg-yellow-500" },
-  "Changes": { bg: "bg-orange-500/20", text: "text-orange-400", dot: "bg-orange-500" },
-  "Issues": { bg: "bg-red-500/20", text: "text-red-400", dot: "bg-red-500" },
-  "Satisfied Client": { bg: "bg-green-500/20", text: "text-green-400", dot: "bg-green-500" },
+const TAG_COLORS: Record<string, { bg: string; text: string }> = {
+  "New": { bg: "bg-blue-600", text: "text-white" },
+  "Working": { bg: "bg-purple-600", text: "text-white" },
+  "Pending": { bg: "bg-yellow-600", text: "text-white" },
+  "Changes": { bg: "bg-orange-600", text: "text-white" },
+  "Issues": { bg: "bg-red-600", text: "text-white" },
+  "Satisfied Client": { bg: "bg-green-600", text: "text-white" },
 };
 
 const AVATAR_COLORS = [
-  "bg-purple-600",
-  "bg-blue-600",
-  "bg-green-600",
-  "bg-orange-600",
-  "bg-pink-600",
-  "bg-cyan-600",
+  "#6366f1", "#8b5cf6", "#a855f7", "#d946ef",
+  "#ec4899", "#f43f5e", "#f97316", "#eab308",
+  "#84cc16", "#22c55e", "#14b8a6", "#06b6d4",
 ];
 
 function getAvatarColor(name: string) {
@@ -82,7 +82,6 @@ export default function WhatsAppPage() {
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [filterTag, setFilterTag] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [selectedDesignerFilter, setSelectedDesignerFilter] = useState<string>("all");
   const [showOrderPanel, setShowOrderPanel] = useState(false);
   const [showLinkOrderDialog, setShowLinkOrderDialog] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -119,7 +118,6 @@ export default function WhatsAppPage() {
   });
 
   const linkedOrder = orders?.find(o => o.id === selectedChat?.linkedOrderId);
-
   const designers = teamMembers?.filter(u => u.role === "designer") || [];
 
   const sendMessageMutation = useMutation({
@@ -252,14 +250,6 @@ export default function WhatsAppPage() {
     }
   };
 
-  const copyPhoneNumber = () => {
-    if (selectedChat?.clientPhone) {
-      navigator.clipboard.writeText(selectedChat.clientPhone);
-      toast({ title: "Copied", description: "Phone number copied" });
-    }
-  };
-
-  // Show phone number instead of "New Lead" placeholder
   const getDisplayName = (chat: ChatWithDetails) => {
     if (chat.clientName && chat.clientName !== "New Lead" && chat.clientName.trim() !== "") {
       return chat.clientName;
@@ -278,39 +268,6 @@ export default function WhatsAppPage() {
     return true;
   });
 
-  const newMessageChats = filteredChats?.filter(c => (c.unreadCount || 0) > 0);
-  
-  // Group chats by designer for "By Designer" tab
-  const designerGroups = (() => {
-    if (!isAdmin && !isSupport) return [];
-    const groups: { designer: User | null; chats: ChatWithDetails[] }[] = [];
-    const assignedDesignerIds = new Set<number>();
-    
-    filteredChats?.forEach(chat => {
-      if (chat.assignedToId) {
-        assignedDesignerIds.add(chat.assignedToId);
-      }
-    });
-    
-    // Add groups for each designer with assigned chats
-    designers.forEach(d => {
-      const designerChats = filteredChats?.filter(c => c.assignedToId === d.id) || [];
-      if (designerChats.length > 0) {
-        groups.push({ designer: d, chats: designerChats });
-      }
-    });
-    
-    // Add unassigned group
-    const unassignedChats = filteredChats?.filter(c => !c.assignedToId) || [];
-    if (unassignedChats.length > 0) {
-      groups.push({ designer: null, chats: unassignedChats });
-    }
-    
-    return groups;
-  })();
-
-  const getTagStyle = (tag: string) => TAG_COLORS[tag] || TAG_COLORS["New"];
-
   const filteredShortcuts = shortcuts?.filter(s => {
     const searchTerm = messageText.replace(/^\/+/, "").toLowerCase();
     return s.command.toLowerCase().includes(searchTerm);
@@ -319,331 +276,326 @@ export default function WhatsAppPage() {
   if (isLoading) return null;
 
   return (
-    <div className="flex h-full w-full bg-slate-950">
+    <div className="flex h-screen w-full" style={{ backgroundColor: "#0b141a" }}>
       {/* Left Sidebar - Chat List */}
-      <div className="w-72 lg:w-80 min-w-[260px] max-w-[320px] border-r border-slate-800 flex flex-col bg-slate-950 flex-shrink-0">
+      <div 
+        className="w-[420px] min-w-[300px] max-w-[420px] flex flex-col border-r"
+        style={{ backgroundColor: "#111b21", borderColor: "#222d34" }}
+      >
         {/* Header */}
-        <div className="p-3 border-b border-slate-800">
-          <div className="flex items-center gap-2 mb-3">
-            <SiWhatsapp className="w-5 h-5 text-green-500" />
-            <h2 className="text-lg font-bold text-white">WhatsApp</h2>
+        <div 
+          className="h-14 px-4 flex items-center justify-between"
+          style={{ backgroundColor: "#202c33" }}
+        >
+          <div className="flex items-center gap-3">
+            <div 
+              className="w-10 h-10 rounded-full flex items-center justify-center"
+              style={{ backgroundColor: "#2a3942" }}
+            >
+              <span className="text-slate-300 font-medium">
+                {user?.name?.charAt(0) || "U"}
+              </span>
+            </div>
           </div>
-          
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-            <Input
-              placeholder="Search by name, number, or order ID"
-              className="pl-10 bg-slate-900 border-slate-700 text-white text-sm h-9"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              data-testid="input-search-chats"
-            />
+          <div className="flex items-center gap-2">
+            <button className="p-2 rounded-full hover:bg-white/5 text-slate-400">
+              <RefreshCw className="w-5 h-5" />
+            </button>
+            <button className="p-2 rounded-full hover:bg-white/5 text-slate-400">
+              <MessageSquarePlus className="w-5 h-5" />
+            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="p-2 rounded-full hover:bg-white/5 text-slate-400">
+                  <MoreVertical className="w-5 h-5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent 
+                align="end" 
+                className="w-56"
+                style={{ backgroundColor: "#233138", borderColor: "#233138" }}
+              >
+                <DropdownMenuItem className="text-slate-200 hover:bg-white/5 cursor-pointer">
+                  New group
+                </DropdownMenuItem>
+                <DropdownMenuItem className="text-slate-200 hover:bg-white/5 cursor-pointer">
+                  Starred messages
+                </DropdownMenuItem>
+                <DropdownMenuItem className="text-slate-200 hover:bg-white/5 cursor-pointer">
+                  Settings
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
 
-        {/* Tabs */}
-        <Tabs defaultValue="all" className="flex-1 flex flex-col overflow-hidden">
-          <div className="px-3 py-3 border-b border-slate-800">
-            <TabsList className={cn(
-              "bg-slate-800/50 p-1 h-auto w-full grid gap-1",
-              (isAdmin || isSupport) ? "grid-cols-3" : "grid-cols-2"
-            )}>
-              <TabsTrigger 
-                value="all" 
-                className="px-2 py-2 text-xs data-[state=active]:bg-slate-700 data-[state=active]:text-white rounded"
-                data-testid="tab-all-chats"
-              >
-                All Chats
-              </TabsTrigger>
-              <TabsTrigger 
-                value="new" 
-                className="px-2 py-2 text-xs data-[state=active]:bg-slate-700 data-[state=active]:text-white rounded"
-                data-testid="tab-new-messages"
-              >
-                New {newMessageChats && newMessageChats.length > 0 && `(${newMessageChats.length})`}
-              </TabsTrigger>
-              {(isAdmin || isSupport) && (
-                <TabsTrigger 
-                  value="designers" 
-                  className="px-2 py-2 text-xs data-[state=active]:bg-slate-700 data-[state=active]:text-white rounded"
-                  data-testid="tab-by-designer"
-                >
-                  By Designer
-                </TabsTrigger>
-              )}
-            </TabsList>
-          </div>
-
-          <TabsContent value="all" className="flex-1 m-0 overflow-hidden">
-            <ScrollArea className="h-full">
-              <div className="p-2 space-y-1">
-                {filteredChats?.map(chat => (
-                  <ChatListItem
-                    key={chat.id}
-                    chat={chat}
-                    isSelected={selectedChat?.id === chat.id}
-                    onClick={() => setSelectedChat(chat)}
-                    getTagStyle={getTagStyle}
-                    getDisplayName={getDisplayName}
-                  />
-                ))}
-                {(!filteredChats || filteredChats.length === 0) && (
-                  <p className="text-slate-500 text-center py-8 text-sm">No chats found</p>
-                )}
-              </div>
-            </ScrollArea>
-          </TabsContent>
-
-          <TabsContent value="new" className="flex-1 m-0 overflow-hidden">
-            <ScrollArea className="h-full">
-              <div className="p-2 space-y-1">
-                {newMessageChats?.map(chat => (
-                  <ChatListItem
-                    key={chat.id}
-                    chat={chat}
-                    isSelected={selectedChat?.id === chat.id}
-                    onClick={() => setSelectedChat(chat)}
-                    getTagStyle={getTagStyle}
-                    getDisplayName={getDisplayName}
-                  />
-                ))}
-                {(!newMessageChats || newMessageChats.length === 0) && (
-                  <p className="text-slate-500 text-center py-8 text-sm">No new messages</p>
-                )}
-              </div>
-            </ScrollArea>
-          </TabsContent>
-
-          {(isAdmin || isSupport) && (
-            <TabsContent value="designers" className="flex-1 m-0 overflow-hidden flex flex-col">
-              {/* Designer Filter Dropdown */}
-              <div className="p-2 border-b border-slate-800">
-                <Select
-                  value={selectedDesignerFilter}
-                  onValueChange={setSelectedDesignerFilter}
-                >
-                  <SelectTrigger className="w-full h-9 bg-slate-800 border-slate-700 text-slate-300 text-sm" data-testid="select-designer-filter">
-                    <SelectValue placeholder="Select Designer" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-slate-900 border-slate-700">
-                    <SelectItem value="all" className="text-slate-300 text-sm">All Designers</SelectItem>
-                    {designers.map(d => (
-                      <SelectItem key={d.id} value={d.id.toString()} className="text-slate-300 text-sm">
-                        {d.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <ScrollArea className="flex-1">
-                <div className="p-2 space-y-3">
-                  {designerGroups
-                    .filter(group => {
-                      if (selectedDesignerFilter === "all") return true;
-                      return group.designer?.id.toString() === selectedDesignerFilter;
-                    })
-                    .map(group => (
-                    <div key={group.designer?.id || "unassigned"}>
-                      <div className="flex items-center gap-2 px-2 py-1 mb-1">
-                        <div className={cn(
-                          "w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-medium",
-                          group.designer ? getAvatarColor(group.designer.name) : "bg-slate-600"
-                        )}>
-                          {group.designer?.name.charAt(0) || "?"}
-                        </div>
-                        <span className="text-xs font-semibold text-slate-300">
-                          {group.designer?.name || "Unassigned"}
-                        </span>
-                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                          {group.chats.length}
-                        </Badge>
-                      </div>
-                      <div className="space-y-1 pl-2">
-                        {group.chats.map(chat => (
-                          <ChatListItem
-                            key={chat.id}
-                            chat={chat}
-                            isSelected={selectedChat?.id === chat.id}
-                            onClick={() => setSelectedChat(chat)}
-                            getTagStyle={getTagStyle}
-                            getDisplayName={getDisplayName}
-                            compact
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                  {designerGroups.filter(group => {
-                    if (selectedDesignerFilter === "all") return true;
-                    if (selectedDesignerFilter === "unassigned") return !group.designer;
-                    return group.designer?.id.toString() === selectedDesignerFilter;
-                  }).length === 0 && (
-                    <p className="text-slate-500 text-center py-8 text-sm">No chats found</p>
+        {/* Search */}
+        <div className="px-3 py-2" style={{ backgroundColor: "#111b21" }}>
+          <div className="flex items-center gap-3">
+            <div 
+              className="flex-1 flex items-center gap-4 px-3 py-2 rounded-lg"
+              style={{ backgroundColor: "#202c33" }}
+            >
+              <Search className="w-4 h-4 text-slate-500" />
+              <input
+                type="text"
+                placeholder="Search or start a new chat"
+                className="flex-1 bg-transparent text-sm text-slate-200 placeholder:text-slate-500 outline-none"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                data-testid="input-search-chats"
+              />
+            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button 
+                  className={cn(
+                    "p-2 rounded-full hover:bg-white/5",
+                    filterTag ? "text-green-500" : "text-slate-400"
                   )}
-                </div>
-              </ScrollArea>
-            </TabsContent>
-          )}
-        </Tabs>
+                >
+                  <Filter className="w-5 h-5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent 
+                align="end"
+                style={{ backgroundColor: "#233138", borderColor: "#233138" }}
+              >
+                <DropdownMenuItem 
+                  className={cn(
+                    "text-slate-200 hover:bg-white/5 cursor-pointer",
+                    !filterTag && "bg-white/10"
+                  )}
+                  onClick={() => setFilterTag(null)}
+                >
+                  All Chats
+                </DropdownMenuItem>
+                <DropdownMenuSeparator style={{ backgroundColor: "#2a3942" }} />
+                {CHAT_TAGS.map(tag => (
+                  <DropdownMenuItem
+                    key={tag}
+                    className={cn(
+                      "text-slate-200 hover:bg-white/5 cursor-pointer flex items-center gap-2",
+                      filterTag === tag && "bg-white/10"
+                    )}
+                    onClick={() => setFilterTag(filterTag === tag ? null : tag)}
+                  >
+                    <span 
+                      className="w-2 h-2 rounded-full"
+                      style={{ backgroundColor: TAG_COLORS[tag]?.bg.replace("bg-", "#").replace("-600", "") }}
+                    />
+                    {tag}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
 
-        {/* Filter Tags */}
-        <div className="p-3 border-t border-slate-800">
-          <p className="text-xs text-slate-500 mb-2">Filter Tags</p>
-          <div className="flex flex-wrap gap-1.5">
-            {CHAT_TAGS.map(tag => {
-              const style = getTagStyle(tag);
-              const isActive = filterTag === tag;
+        {/* Chat List */}
+        <ScrollArea className="flex-1">
+          <div className="py-1">
+            {filteredChats?.map(chat => {
+              const displayName = getDisplayName(chat);
+              const isSelected = selectedChat?.id === chat.id;
+              const unreadCount = chat.unreadCount || 0;
+              const primaryTag = (chat.tags as string[] || [])[0];
+              
               return (
                 <button
-                  key={tag}
-                  onClick={() => setFilterTag(isActive ? null : tag)}
+                  key={chat.id}
+                  onClick={() => setSelectedChat(chat)}
                   className={cn(
-                    "flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors",
-                    isActive ? style.bg : "bg-slate-800 hover:bg-slate-700",
-                    isActive ? style.text : "text-slate-400"
+                    "w-full flex items-center gap-3 px-3 py-3 hover:bg-white/5 transition-colors",
+                    isSelected && "bg-white/10"
                   )}
-                  data-testid={`filter-tag-${tag.toLowerCase()}`}
+                  style={{ borderBottom: "1px solid #222d34" }}
+                  data-testid={`chat-item-${chat.id}`}
                 >
-                  <span className={cn("w-1.5 h-1.5 rounded-full", style.dot)} />
-                  {tag}
+                  {/* Avatar */}
+                  <div 
+                    className="w-12 h-12 rounded-full flex items-center justify-center text-white font-medium text-lg flex-shrink-0"
+                    style={{ backgroundColor: getAvatarColor(displayName) }}
+                  >
+                    {displayName.charAt(0).toUpperCase()}
+                  </div>
+                  
+                  {/* Content */}
+                  <div className="flex-1 min-w-0 text-left">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-white font-normal text-base truncate">
+                        {displayName}
+                      </span>
+                      <span className="text-xs text-slate-500 flex-shrink-0">
+                        {chat.lastMessageAt ? format(new Date(chat.lastMessageAt), "HH:mm") : ""}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 mt-0.5">
+                      <div className="flex items-center gap-1 min-w-0 flex-1">
+                        <CheckCheck className="w-4 h-4 text-blue-400 flex-shrink-0" />
+                        <span className="text-sm text-slate-400 truncate">
+                          {chat.lastMessage || "No messages"}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        {primaryTag && (
+                          <span 
+                            className={cn(
+                              "text-[10px] px-1.5 py-0.5 rounded font-medium",
+                              TAG_COLORS[primaryTag]?.bg,
+                              TAG_COLORS[primaryTag]?.text
+                            )}
+                          >
+                            {primaryTag}
+                          </span>
+                        )}
+                        {unreadCount > 0 && (
+                          <span 
+                            className="min-w-[20px] h-5 px-1.5 rounded-full flex items-center justify-center text-xs font-medium text-white"
+                            style={{ backgroundColor: "#00a884" }}
+                          >
+                            {unreadCount}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </button>
               );
             })}
+            {(!filteredChats || filteredChats.length === 0) && (
+              <div className="text-center py-12">
+                <p className="text-slate-500">No chats found</p>
+              </div>
+            )}
           </div>
-        </div>
+        </ScrollArea>
       </div>
 
-      {/* Right Panel - Chat Detail */}
-      <div className="flex-1 flex flex-col bg-slate-900 min-w-0 overflow-hidden">
+      {/* Right Panel */}
+      <div className="flex-1 flex flex-col min-w-0" style={{ backgroundColor: "#0b141a" }}>
         {selectedChat ? (
           <>
-            {/* Chat Header - Responsive */}
-            <div className="p-3 border-b border-slate-800">
-              <div className="flex items-center justify-between gap-2">
-                {/* Left: Avatar and Name */}
-                <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <div className={cn(
-                    "w-10 h-10 rounded-full flex items-center justify-center text-white font-medium flex-shrink-0",
-                    getAvatarColor(selectedChat.clientName)
-                  )}>
-                    {selectedChat.clientName.charAt(0)}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="text-white font-semibold truncate">{getDisplayName(selectedChat)}</h3>
-                      <span className="text-slate-400 text-sm">{selectedChat.clientPhone}</span>
-                    </div>
-                    <div className="flex items-center gap-1 mt-0.5 flex-wrap">
-                      {(selectedChat.tags as string[] || []).slice(0, 2).map((tag, idx) => {
-                        const style = getTagStyle(tag);
-                        return (
-                          <Badge key={idx} className={cn("text-[10px] px-1.5 py-0", style.bg, style.text, "border-0")}>
-                            {tag}
-                          </Badge>
-                        );
-                      })}
-                    </div>
-                  </div>
+            {/* Chat Header */}
+            <div 
+              className="h-14 px-4 flex items-center justify-between"
+              style={{ backgroundColor: "#202c33" }}
+            >
+              <div className="flex items-center gap-3">
+                <div 
+                  className="w-10 h-10 rounded-full flex items-center justify-center text-white font-medium"
+                  style={{ backgroundColor: getAvatarColor(getDisplayName(selectedChat)) }}
+                >
+                  {getDisplayName(selectedChat).charAt(0).toUpperCase()}
                 </div>
-
-                {/* Right: Controls */}
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  {(isAdmin || isSupport) && (
-                    <Select
-                      value={selectedChat.assignedToId?.toString() || ""}
-                      onValueChange={(val) => handleAssign(Number(val))}
+                <div>
+                  <h3 className="text-white font-medium">{getDisplayName(selectedChat)}</h3>
+                  <p className="text-xs text-slate-400">{selectedChat.clientPhone}</p>
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-1">
+                {(isAdmin || isSupport) && (
+                  <Select
+                    value={selectedChat.assignedToId?.toString() || ""}
+                    onValueChange={(val) => handleAssign(Number(val))}
+                  >
+                    <SelectTrigger 
+                      className="w-auto h-8 border-0 text-slate-300 text-xs gap-1 px-2"
+                      style={{ backgroundColor: "#2a3942" }}
                     >
-                      <SelectTrigger className="w-auto h-8 bg-slate-800 border-slate-700 text-slate-300 text-xs gap-1 px-2">
-                        <span className="hidden sm:inline text-slate-500">Assign:</span>
-                        <SelectValue placeholder="Select" />
-                      </SelectTrigger>
-                      <SelectContent className="bg-slate-900 border-slate-700">
-                        {designers.map(d => (
-                          <SelectItem key={d.id} value={d.id.toString()} className="text-slate-300 text-sm">
-                            {d.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="sm" className="text-slate-400 gap-1 h-8 px-2">
-                        <span className="hidden sm:inline">Tag</span>
-                        <ChevronDown className="w-3 h-3" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="bg-slate-900 border-slate-700">
-                      {CHAT_TAGS.map(tag => {
-                        const isActive = (selectedChat.tags as string[] || []).includes(tag);
-                        return (
-                          <DropdownMenuItem 
-                            key={tag} 
-                            onClick={() => handleSetTag(tag)}
-                            className="text-slate-300 flex items-center justify-between"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className={cn("w-2 h-2 rounded-full", getTagStyle(tag).dot)} />
-                              {tag}
-                            </div>
-                            {isActive && <Check className="w-4 h-4 text-green-500" />}
-                          </DropdownMenuItem>
-                        );
-                      })}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-
-                  <Button variant="ghost" size="icon" onClick={copyPhoneNumber} data-testid="button-copy-phone">
-                    <Copy className="w-4 h-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="hidden sm:flex" data-testid="button-external-link">
-                    <ExternalLink className="w-4 h-4" />
-                  </Button>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" data-testid="button-more-options">
-                        <MoreHorizontal className="w-4 h-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="bg-slate-900 border-slate-700">
-                      {linkedOrder ? (
-                        <>
-                          <DropdownMenuItem 
-                            className="text-slate-300"
-                            onClick={() => setShowOrderPanel(true)}
-                          >
-                            <LinkIcon className="w-4 h-4 mr-2" />
-                            View Order ({linkedOrder.orderNumber || `#${linkedOrder.id}`})
-                          </DropdownMenuItem>
-                          {(isAdmin || isSupport) && (
-                            <DropdownMenuItem 
-                              className="text-slate-300"
-                              onClick={handleUnlinkOrder}
-                            >
-                              <X className="w-4 h-4 mr-2" />
-                              Unlink Order
-                            </DropdownMenuItem>
-                          )}
-                        </>
-                      ) : (isAdmin || isSupport) ? (
+                      <SelectValue placeholder="Assign" />
+                    </SelectTrigger>
+                    <SelectContent style={{ backgroundColor: "#233138", borderColor: "#233138" }}>
+                      {designers.map(d => (
+                        <SelectItem key={d.id} value={d.id.toString()} className="text-slate-300 text-sm">
+                          {d.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button className="p-2 rounded-full hover:bg-white/5 text-slate-400">
+                      <MoreVertical className="w-5 h-5" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent 
+                    align="end" 
+                    className="w-56"
+                    style={{ backgroundColor: "#233138", borderColor: "#233138" }}
+                  >
+                    <DropdownMenuItem 
+                      className="text-slate-200 hover:bg-white/5 cursor-pointer"
+                      onClick={() => {
+                        if (selectedChat?.clientPhone) {
+                          navigator.clipboard.writeText(selectedChat.clientPhone);
+                          toast({ title: "Copied", description: "Phone number copied" });
+                        }
+                      }}
+                    >
+                      Copy phone number
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator style={{ backgroundColor: "#2a3942" }} />
+                    
+                    {/* Tags submenu */}
+                    {CHAT_TAGS.map(tag => {
+                      const isActive = (selectedChat.tags as string[] || []).includes(tag);
+                      return (
                         <DropdownMenuItem 
-                          className="text-slate-300"
-                          onClick={() => setShowLinkOrderDialog(true)}
+                          key={tag}
+                          className="text-slate-200 hover:bg-white/5 cursor-pointer flex items-center justify-between"
+                          onClick={() => handleSetTag(tag)}
                         >
-                          <LinkIcon className="w-4 h-4 mr-2" />
-                          Link to Order
+                          <span>{tag}</span>
+                          {isActive && <Check className="w-4 h-4 text-green-500" />}
                         </DropdownMenuItem>
-                      ) : null}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
+                      );
+                    })}
+                    
+                    <DropdownMenuSeparator style={{ backgroundColor: "#2a3942" }} />
+                    
+                    {linkedOrder ? (
+                      <>
+                        <DropdownMenuItem 
+                          className="text-slate-200 hover:bg-white/5 cursor-pointer"
+                          onClick={() => setShowOrderPanel(true)}
+                        >
+                          View linked order
+                        </DropdownMenuItem>
+                        {(isAdmin || isSupport) && (
+                          <DropdownMenuItem 
+                            className="text-slate-200 hover:bg-white/5 cursor-pointer"
+                            onClick={handleUnlinkOrder}
+                          >
+                            Unlink order
+                          </DropdownMenuItem>
+                        )}
+                      </>
+                    ) : (isAdmin || isSupport) ? (
+                      <DropdownMenuItem 
+                        className="text-slate-200 hover:bg-white/5 cursor-pointer"
+                        onClick={() => setShowLinkOrderDialog(true)}
+                      >
+                        Link to order
+                      </DropdownMenuItem>
+                    ) : null}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
 
             {/* Messages Area */}
-            <ScrollArea className="flex-1 p-4">
-              <div className="space-y-4 max-w-3xl mx-auto">
+            <ScrollArea 
+              className="flex-1 px-16 py-4"
+              style={{ 
+                backgroundImage: "url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADIAAAAyCAMAAAAp4XiDAAAAUVBMVEWFhYWDg4N3d3dtbW17e3t1dXWBgYGHh4d5eXlzc3Oeli5Reli5ReijReli5Reli5Reli5Reli5Reli5Reli5Reli5Reli5VVVV2dnZ4eHg/P38teleY1CulAAAAG3RSTlNAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEAvEOwtAAABaklEQVR4AeXPW3KDMAwF0JvYJrYx75f9L7SjH1lpM/0w7Ug+T3eCEPR7aQYRSKbR8eXl+Hd6PWoNDowAP0+a2ZpJk0afJz1t1Zc0afJF0tPZRv0kfZ50tdZ+AAAA')",
+                backgroundColor: "#0b141a" 
+              }}
+            >
+              <div className="space-y-2 max-w-3xl mx-auto">
                 {messages?.map(msg => (
                   <MessageBubble key={msg.id} message={msg} />
                 ))}
@@ -652,52 +604,58 @@ export default function WhatsAppPage() {
             </ScrollArea>
 
             {/* Message Input */}
-            <div className="p-3 border-t border-slate-800 relative">
+            <div 
+              className="px-4 py-3"
+              style={{ backgroundColor: "#202c33" }}
+            >
               {showShortcuts && filteredShortcuts && filteredShortcuts.length > 0 && (
-                <div className="absolute bottom-full left-3 right-3 mb-2 bg-slate-800 rounded-lg border border-slate-700 shadow-xl overflow-hidden">
-                  <div className="p-2 border-b border-slate-700">
-                    <div className="flex items-center gap-2 text-slate-400 text-sm px-2">
-                      <span className="text-blue-400">&gt;</span>
-                      <span>{messageText}</span>
-                    </div>
-                  </div>
+                <div 
+                  className="absolute bottom-20 left-4 right-4 rounded-lg border overflow-hidden shadow-xl"
+                  style={{ backgroundColor: "#233138", borderColor: "#2a3942" }}
+                >
                   <div className="max-h-40 overflow-y-auto">
                     {filteredShortcuts.map(shortcut => (
                       <button
                         key={shortcut.id}
-                        className="w-full text-left px-3 py-2 hover:bg-slate-700 flex items-center gap-3 text-sm"
+                        className="w-full text-left px-4 py-3 hover:bg-white/5 flex items-center gap-3"
                         onClick={() => handleShortcut(shortcut)}
                         data-testid={`shortcut-${shortcut.command}`}
                       >
-                        <span className="text-blue-400 font-medium">/{shortcut.command}</span>
-                        <span className="text-slate-400 truncate">{shortcut.content.substring(0, 40)}...</span>
+                        <span className="text-green-400 font-medium">/{shortcut.command}</span>
+                        <span className="text-slate-400 text-sm truncate">{shortcut.content.substring(0, 50)}...</span>
                       </button>
                     ))}
                   </div>
                 </div>
               )}
 
-              {/* File Preview */}
               {selectedFile && (
-                <div className="mb-2 p-2 bg-slate-800 rounded-lg flex items-center gap-2 max-w-xs">
+                <div 
+                  className="mb-2 p-2 rounded-lg flex items-center gap-2 max-w-xs"
+                  style={{ backgroundColor: "#2a3942" }}
+                >
                   {selectedFile.type.startsWith("image/") ? (
-                    <ImageIcon className="w-5 h-5 text-blue-400" />
+                    <ImageIcon className="w-5 h-5 text-slate-400" />
                   ) : (
-                    <File className="w-5 h-5 text-blue-400" />
+                    <File className="w-5 h-5 text-slate-400" />
                   )}
                   <span className="text-sm text-slate-300 truncate flex-1">{selectedFile.name}</span>
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    className="h-6 w-6 text-slate-400"
+                  <button 
+                    className="p-1 hover:bg-white/10 rounded"
                     onClick={() => setSelectedFile(null)}
                   >
-                    <X className="w-4 h-4" />
-                  </Button>
+                    <X className="w-4 h-4 text-slate-400" />
+                  </button>
                 </div>
               )}
 
-              <div className="flex items-end gap-2 max-w-3xl mx-auto">
+              <div className="flex items-end gap-2">
+                <button 
+                  className="p-2 rounded-full hover:bg-white/5 text-slate-400"
+                  data-testid="button-emoji"
+                >
+                  <Smile className="w-6 h-6" />
+                </button>
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -705,20 +663,19 @@ export default function WhatsAppPage() {
                   onChange={handleFileSelect}
                   accept="image/*,.pdf,.doc,.docx"
                 />
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="text-slate-400 h-10 w-10"
+                <button 
+                  className="p-2 rounded-full hover:bg-white/5 text-slate-400"
                   onClick={() => fileInputRef.current?.click()}
                   data-testid="button-attach-file"
                 >
-                  <Paperclip className="w-5 h-5" />
-                </Button>
+                  <Paperclip className="w-6 h-6" />
+                </button>
                 <div className="flex-1">
                   <Textarea
                     ref={inputRef}
-                    placeholder="Type a message... (use / for shortcuts)"
-                    className="bg-slate-800 border-slate-700 text-white resize-none min-h-[40px] max-h-32 text-sm"
+                    placeholder="Type a message"
+                    className="border-0 text-white resize-none min-h-[40px] max-h-32 text-sm rounded-lg"
+                    style={{ backgroundColor: "#2a3942" }}
                     value={messageText}
                     onChange={handleInputChange}
                     onKeyDown={handleKeyDown}
@@ -726,23 +683,59 @@ export default function WhatsAppPage() {
                     data-testid="input-message"
                   />
                 </div>
-                <Button
+                <button
                   onClick={handleSend}
                   disabled={(!messageText.trim() && !selectedFile) || sendMessageMutation.isPending}
-                  className="bg-blue-600 hover:bg-blue-700 h-10 px-4"
+                  className="p-2 rounded-full hover:bg-white/5 text-slate-400 disabled:opacity-50"
                   data-testid="button-send-message"
                 >
-                  <Send className="w-4 h-4" />
-                </Button>
+                  <Send className="w-6 h-6" />
+                </button>
               </div>
             </div>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center">
-              <SiWhatsapp className="w-16 h-16 text-slate-700 mx-auto mb-4" />
-              <h3 className="text-xl font-bold text-white mb-2">Select a Chat</h3>
-              <p className="text-slate-400">Choose a conversation from the sidebar</p>
+          /* WhatsApp Web Intro Screen */
+          <div className="flex-1 flex flex-col items-center justify-center" style={{ backgroundColor: "#222e35" }}>
+            <div className="text-center max-w-md">
+              {/* Illustration */}
+              <div className="mb-8 relative">
+                <div className="flex items-center justify-center gap-8">
+                  {/* Laptop Icon */}
+                  <div className="relative">
+                    <div 
+                      className="w-32 h-24 rounded-lg flex items-center justify-center"
+                      style={{ backgroundColor: "#233138", border: "2px solid #2a3942" }}
+                    >
+                      <div className="w-8 h-6 rounded" style={{ backgroundColor: "#00a884" }} />
+                    </div>
+                    <div 
+                      className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-20 h-2 rounded-b-lg"
+                      style={{ backgroundColor: "#233138" }}
+                    />
+                  </div>
+                  
+                  {/* Phone Icon */}
+                  <div 
+                    className="w-12 h-20 rounded-xl flex items-center justify-center"
+                    style={{ backgroundColor: "#233138", border: "2px solid #2a3942" }}
+                  >
+                    <div className="w-4 h-4 rounded-full" style={{ backgroundColor: "#00a884" }}>
+                      <Check className="w-4 h-4 text-white p-0.5" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <h1 className="text-3xl font-light text-slate-200 mb-4">WhatsApp Web</h1>
+              <p className="text-slate-400 text-sm leading-relaxed mb-8">
+                Send and receive messages without keeping your phone online.<br />
+                Use WhatsApp on up to 4 linked devices and 1 phone at the same time.
+              </p>
+              
+              <p className="text-sm text-slate-500">
+                Built by <span style={{ color: "#00a884" }}>Jazim Abbas</span> <span className="text-red-400">❤</span>
+              </p>
             </div>
           </div>
         )}
@@ -750,21 +743,28 @@ export default function WhatsAppPage() {
 
       {/* Link Order Dialog */}
       <Dialog open={showLinkOrderDialog} onOpenChange={setShowLinkOrderDialog}>
-        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
+        <DialogContent 
+          className="border max-w-md"
+          style={{ backgroundColor: "#233138", borderColor: "#2a3942" }}
+        >
           <DialogHeader>
-            <DialogTitle>Link to Order</DialogTitle>
+            <DialogTitle className="text-white">Link to Order</DialogTitle>
           </DialogHeader>
           <div className="space-y-2 max-h-80 overflow-y-auto">
             {orders?.filter(o => o.advancePaymentStatus === "approved").map(order => (
               <button
                 key={order.id}
-                className="w-full text-left p-3 rounded-lg bg-slate-800 hover:bg-slate-700 transition-colors"
+                className="w-full text-left p-3 rounded-lg transition-colors hover:bg-white/5"
+                style={{ backgroundColor: "#2a3942" }}
                 onClick={() => handleLinkOrder(order.id)}
                 data-testid={`link-order-${order.id}`}
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-medium">{order.orderNumber || `Order #${order.id}`}</span>
-                  <Badge variant="outline" className="text-xs">
+                  <span className="font-medium text-white">{order.orderNumber || `Order #${order.id}`}</span>
+                  <Badge 
+                    variant="outline" 
+                    className="text-xs border-slate-600 text-slate-300"
+                  >
                     {order.status}
                   </Badge>
                 </div>
@@ -780,10 +780,13 @@ export default function WhatsAppPage() {
 
       {/* Order Details Panel */}
       <Dialog open={showOrderPanel} onOpenChange={setShowOrderPanel}>
-        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-lg">
+        <DialogContent 
+          className="border max-w-lg"
+          style={{ backgroundColor: "#233138", borderColor: "#2a3942" }}
+        >
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <LinkIcon className="w-5 h-5 text-blue-500" />
+            <DialogTitle className="text-white flex items-center gap-2">
+              <LinkIcon className="w-5 h-5" style={{ color: "#00a884" }} />
               Linked Order Details
             </DialogTitle>
           </DialogHeader>
@@ -792,7 +795,7 @@ export default function WhatsAppPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-xs text-slate-400 mb-1">Order ID</p>
-                  <p className="font-medium">{linkedOrder.orderNumber || `#${linkedOrder.id}`}</p>
+                  <p className="font-medium text-white">{linkedOrder.orderNumber || `#${linkedOrder.id}`}</p>
                 </div>
                 <div>
                   <p className="text-xs text-slate-400 mb-1">Status</p>
@@ -800,17 +803,17 @@ export default function WhatsAppPage() {
                 </div>
                 <div>
                   <p className="text-xs text-slate-400 mb-1">Client</p>
-                  <p className="font-medium">{linkedOrder.clientName}</p>
+                  <p className="font-medium text-white">{linkedOrder.clientName}</p>
                 </div>
                 <div>
                   <p className="text-xs text-slate-400 mb-1">Phone</p>
-                  <p className="font-medium">{linkedOrder.clientPhone || "—"}</p>
+                  <p className="font-medium text-white">{linkedOrder.clientPhone || "—"}</p>
                 </div>
                 {isAdmin && (
                   <>
                     <div>
                       <p className="text-xs text-slate-400 mb-1">Total Price</p>
-                      <p className="font-medium">₨{((linkedOrder.totalPrice || 0) / 100).toLocaleString()}</p>
+                      <p className="font-medium text-white">₨{((linkedOrder.totalPrice || 0) / 100).toLocaleString()}</p>
                     </div>
                     <div>
                       <p className="text-xs text-slate-400 mb-1">Payment Status</p>
@@ -821,17 +824,16 @@ export default function WhatsAppPage() {
                   </>
                 )}
               </div>
-              <div className="flex gap-2 pt-4 border-t border-slate-700">
+              <div className="flex gap-2 pt-4" style={{ borderTop: "1px solid #2a3942" }}>
                 <Button 
                   variant="outline" 
-                  className="flex-1"
+                  className="flex-1 border-slate-600 text-slate-300 hover:bg-white/5"
                   onClick={() => {
                     setShowOrderPanel(false);
                     window.location.href = "/orders";
                   }}
                   data-testid="button-go-to-orders"
                 >
-                  <ExternalLink className="w-4 h-4 mr-2" />
                   Go to Orders
                 </Button>
               </div>
@@ -843,87 +845,6 @@ export default function WhatsAppPage() {
   );
 }
 
-function ChatListItem({
-  chat,
-  isSelected,
-  onClick,
-  getTagStyle,
-  getDisplayName,
-  compact = false,
-}: {
-  chat: ChatWithDetails;
-  isSelected: boolean;
-  onClick: () => void;
-  getTagStyle: (tag: string) => { bg: string; text: string; dot: string };
-  getDisplayName: (chat: ChatWithDetails) => string;
-  compact?: boolean;
-}) {
-  const primaryTag = (chat.tags as string[] || [])[0];
-  const tagStyle = primaryTag ? getTagStyle(primaryTag) : null;
-  const displayName = getDisplayName(chat);
-  
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "w-full text-left rounded-lg transition-colors relative",
-        compact ? "p-2" : "p-3",
-        isSelected 
-          ? "bg-slate-800/70 border-l-2 border-l-blue-500" 
-          : "hover:bg-slate-800/50"
-      )}
-      data-testid={`chat-item-${chat.id}`}
-    >
-      <div className="flex items-start gap-2">
-        <div className="relative flex-shrink-0">
-          <div className={cn(
-            "rounded-full flex items-center justify-center text-white font-medium",
-            compact ? "w-8 h-8 text-xs" : "w-10 h-10 text-sm",
-            getAvatarColor(displayName)
-          )}>
-            {displayName.charAt(0)}
-          </div>
-          {(chat.unreadCount || 0) > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-slate-950" />
-          )}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-1">
-            <span className={cn(
-              "text-white font-medium truncate",
-              compact ? "text-xs" : "text-sm"
-            )}>
-              {displayName}
-            </span>
-            {chat.lastMessageAt && (
-              <span className="text-[10px] text-slate-500 flex-shrink-0">
-                {format(new Date(chat.lastMessageAt), "h:mm a")}
-              </span>
-            )}
-          </div>
-          
-          <div className="flex items-center gap-1 mt-0.5">
-            {primaryTag && tagStyle && (
-              <Badge className={cn("text-[10px] px-1 py-0 h-4", tagStyle.bg, tagStyle.text, "border-0")}>
-                {primaryTag}
-              </Badge>
-            )}
-            {(chat.unreadCount || 0) > 0 && (
-              <Badge className="bg-blue-600 text-white text-[10px] px-1 py-0 h-4">
-                {chat.unreadCount} New
-              </Badge>
-            )}
-          </div>
-          
-          {!compact && (
-            <p className="text-xs text-slate-400 truncate mt-0.5">{chat.lastMessage || "No messages"}</p>
-          )}
-        </div>
-      </div>
-    </button>
-  );
-}
-
 function MessageBubble({ message }: { message: Message }) {
   const isUser = message.senderType === "user";
   const isSystem = message.messageType === "system";
@@ -931,12 +852,11 @@ function MessageBubble({ message }: { message: Message }) {
   if (isSystem) {
     return (
       <div className="flex justify-center">
-        <div className="bg-emerald-500/20 text-emerald-400 px-4 py-2 rounded-full text-sm flex items-center gap-2">
-          <CheckCircle className="w-4 h-4" />
+        <div 
+          className="px-3 py-1 rounded-lg text-xs"
+          style={{ backgroundColor: "#182229", color: "#8696a0" }}
+        >
           {message.content}
-          <span className="text-emerald-500/70 text-xs">
-            {format(new Date(message.createdAt!), "h:mm a")}
-          </span>
         </div>
       </div>
     );
@@ -945,10 +865,10 @@ function MessageBubble({ message }: { message: Message }) {
   return (
     <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
       <div
-        className={cn(
-          "max-w-[70%] rounded-2xl px-4 py-2",
-          isUser ? "bg-slate-700 text-white" : "bg-slate-800 text-slate-200"
-        )}
+        className="max-w-[65%] rounded-lg px-3 py-2 shadow-sm"
+        style={{ 
+          backgroundColor: isUser ? "#005c4b" : "#202c33",
+        }}
       >
         {message.messageType === "file" && message.fileUrl && (
           <div className="mb-2">
@@ -959,10 +879,15 @@ function MessageBubble({ message }: { message: Message }) {
             />
           </div>
         )}
-        <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-        <p className={cn("text-xs mt-1 text-right", isUser ? "text-slate-400" : "text-slate-500")}>
-          {format(new Date(message.createdAt!), "h:mm a")}
-        </p>
+        <p className="text-sm text-slate-100 whitespace-pre-wrap">{message.content}</p>
+        <div className="flex items-center justify-end gap-1 mt-1">
+          <span className="text-[11px]" style={{ color: "#8696a0" }}>
+            {format(new Date(message.createdAt!), "HH:mm")}
+          </span>
+          {isUser && (
+            <CheckCheck className="w-4 h-4" style={{ color: "#53bdeb" }} />
+          )}
+        </div>
       </div>
     </div>
   );
