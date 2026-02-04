@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import chatBgPattern from "@assets/8c98994518b575bfd8c949e91d20548b_1770211798127.jpg";
 import { useQuery, useMutation, keepPreviousData } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { Input } from "@/components/ui/input";
@@ -30,6 +31,15 @@ import {
   RefreshCw,
   MessageSquarePlus,
   Filter,
+  Mic,
+  MicOff,
+  Play,
+  Pause,
+  Square,
+  Package,
+  Plus,
+  Trash2,
+  Star,
 } from "lucide-react";
 import { SiWhatsapp } from "react-icons/si";
 import {
@@ -84,9 +94,19 @@ export default function WhatsAppPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [showOrderPanel, setShowOrderPanel] = useState(false);
   const [showLinkOrderDialog, setShowLinkOrderDialog] = useState(false);
+  const [activeTab, setActiveTab] = useState<"all" | "unread" | "favourites" | "assigned">("all");
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [showCatalogDialog, setShowCatalogDialog] = useState(false);
+  const [playingAudioId, setPlayingAudioId] = useState<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const isAdmin = user?.role === "admin";
   const isSupport = user?.role === "support";
@@ -171,6 +191,91 @@ export default function WhatsAppPage() {
       id: selectedChat.id,
       updates: { linkedOrderId: null }
     });
+  };
+
+  // Common emojis for picker
+  const emojiCategories = {
+    smileys: ["😀", "😃", "😄", "😁", "😅", "😂", "🤣", "😊", "😇", "🙂", "😉", "😌", "😍", "🥰", "😘", "😋", "😛", "🤔", "🤗", "🤭", "🥳", "😎", "🤩", "😏", "😒", "😞", "😔", "😟", "😕", "🙁", "😣", "😖", "😫", "😩", "🥺", "😢", "😭", "😤", "😠", "😡", "🤬", "😈", "👿", "💀", "☠️", "💩", "🤡", "👹", "👺", "👻", "👽", "👾", "🤖"],
+    gestures: ["👋", "🤚", "🖐️", "✋", "🖖", "👌", "🤌", "🤏", "✌️", "🤞", "🤟", "🤘", "🤙", "👈", "👉", "👆", "🖕", "👇", "☝️", "👍", "👎", "✊", "👊", "🤛", "🤜", "👏", "🙌", "👐", "🤲", "🤝", "🙏", "✍️", "💪", "🦾", "🦿"],
+    hearts: ["❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "❣️", "💕", "💞", "💓", "💗", "💖", "💘", "💝", "💟", "♥️", "💌", "💋", "👄"],
+    objects: ["📱", "💻", "⌨️", "🖥️", "🖨️", "📷", "📹", "🎥", "📞", "☎️", "📧", "📬", "📝", "📂", "📁", "📊", "📈", "📉", "🗓️", "📆", "📅", "⏰", "🕐", "💵", "💴", "💶", "💷", "💰", "💳", "🎁", "🎉", "🎊", "🎈", "✨", "🔥", "💯", "⭐", "🌟", "✅", "❌", "⚠️", "🚀"],
+    nature: ["🌸", "🌹", "🌺", "🌻", "🌼", "🌷", "🌱", "🌲", "🌳", "🌴", "🌵", "🌾", "🌿", "☘️", "🍀", "🍁", "🍂", "🍃", "🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐨", "🐯", "🦁", "🐮", "🐷"]
+  };
+
+  // Voice recording functions
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        setAudioBlob(audioBlob);
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingTime(0);
+      
+      recordingIntervalRef.current = setInterval(() => {
+        setRecordingTime(prev => prev + 1);
+      }, 1000);
+    } catch (error) {
+      toast({ title: "Error", description: "Could not access microphone", variant: "destructive" });
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      if (recordingIntervalRef.current) {
+        clearInterval(recordingIntervalRef.current);
+      }
+    }
+  };
+
+  const cancelRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      setAudioBlob(null);
+      if (recordingIntervalRef.current) {
+        clearInterval(recordingIntervalRef.current);
+      }
+    }
+  };
+
+  const sendVoiceMessage = useCallback(() => {
+    if (!audioBlob || !selectedChat) return;
+    const voiceFile = new (window as any).File([audioBlob], "voice_message.webm", { type: "audio/webm" }) as File;
+    sendMessageMutation.mutate({ 
+      chatId: selectedChat.id, 
+      content: "Voice message",
+      file: voiceFile 
+    });
+    setAudioBlob(null);
+    setRecordingTime(0);
+  }, [audioBlob, selectedChat, sendMessageMutation]);
+
+  const formatRecordingTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  const insertEmoji = (emoji: string) => {
+    setMessageText(prev => prev + emoji);
+    inputRef.current?.focus();
   };
 
   useEffect(() => {
@@ -261,6 +366,12 @@ export default function WhatsAppPage() {
     if (chat.isInternal) return false;
     if (isDesigner && chat.assignedToId !== user?.id) return false;
     if (filterTag && !(chat.tags as string[] || []).includes(filterTag)) return false;
+    
+    // Tab filtering
+    if (activeTab === "unread" && (chat.unreadCount || 0) === 0) return false;
+    if (activeTab === "favourites" && !(chat.tags as string[] || []).includes("Satisfied Client")) return false;
+    if (activeTab === "assigned" && !chat.assignedToId) return false;
+    
     if (search) {
       const name = getDisplayName(chat).toLowerCase();
       return name.includes(search.toLowerCase()) || chat.clientPhone?.includes(search);
@@ -331,69 +442,129 @@ export default function WhatsAppPage() {
 
         {/* Search */}
         <div className="px-3 py-2" style={{ backgroundColor: "#111b21" }}>
-          <div className="flex items-center gap-3">
-            <div 
-              className="flex-1 flex items-center gap-4 px-3 py-2 rounded-lg"
-              style={{ backgroundColor: "#202c33" }}
-            >
-              <Search className="w-4 h-4 text-slate-500" />
-              <input
-                type="text"
-                placeholder="Search or start a new chat"
-                className="flex-1 bg-transparent text-sm text-slate-200 placeholder:text-slate-500 outline-none"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                data-testid="input-search-chats"
-              />
-            </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button 
-                  variant="ghost"
-                  size="icon"
-                  className={cn(
-                    "hover:bg-white/5",
-                    filterTag ? "text-green-500" : "text-slate-400"
-                  )}
-                  data-testid="button-filter-tags"
-                >
-                  <Filter className="w-5 h-5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent 
-                align="end"
-                style={{ backgroundColor: "#233138", borderColor: "#233138" }}
-              >
-                <DropdownMenuItem 
-                  className={cn(
-                    "text-slate-200 hover:bg-white/5 cursor-pointer",
-                    !filterTag && "bg-white/10"
-                  )}
-                  onClick={() => setFilterTag(null)}
-                >
-                  All Chats
-                </DropdownMenuItem>
-                <DropdownMenuSeparator style={{ backgroundColor: "#2a3942" }} />
-                {CHAT_TAGS.map(tag => (
-                  <DropdownMenuItem
-                    key={tag}
-                    className={cn(
-                      "text-slate-200 hover:bg-white/5 cursor-pointer flex items-center gap-2",
-                      filterTag === tag && "bg-white/10"
-                    )}
-                    onClick={() => setFilterTag(filterTag === tag ? null : tag)}
-                    data-testid={`filter-tag-${tag.toLowerCase().replace(/\s+/g, "-")}`}
-                  >
-                    <span 
-                      className="w-2 h-2 rounded-full"
-                      style={{ backgroundColor: TAG_COLORS[tag]?.hex }}
-                    />
-                    {tag}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+          <div 
+            className="flex items-center gap-4 px-3 py-2 rounded-lg"
+            style={{ backgroundColor: "#202c33" }}
+          >
+            <Search className="w-4 h-4 text-slate-500" />
+            <input
+              type="text"
+              placeholder="Search or start a new chat"
+              className="flex-1 bg-transparent text-sm text-slate-200 placeholder:text-slate-500 outline-none"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              data-testid="input-search-chats"
+            />
           </div>
+        </div>
+
+        {/* Tab Filters */}
+        <div className="px-3 py-2 flex gap-2" style={{ backgroundColor: "#111b21" }}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setActiveTab("all")}
+            className={cn(
+              "rounded-full text-xs px-4",
+              activeTab === "all" 
+                ? "bg-[#00a884] text-white hover:bg-[#00a884]" 
+                : "bg-[#202c33] text-slate-300 hover:bg-[#2a3942]"
+            )}
+            data-testid="tab-all"
+          >
+            All
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setActiveTab("unread")}
+            className={cn(
+              "rounded-full text-xs px-4",
+              activeTab === "unread" 
+                ? "bg-[#00a884] text-white hover:bg-[#00a884]" 
+                : "bg-[#202c33] text-slate-300 hover:bg-[#2a3942]"
+            )}
+            data-testid="tab-unread"
+          >
+            Unread
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setActiveTab("favourites")}
+            className={cn(
+              "rounded-full text-xs px-4",
+              activeTab === "favourites" 
+                ? "bg-[#00a884] text-white hover:bg-[#00a884]" 
+                : "bg-[#202c33] text-slate-300 hover:bg-[#2a3942]"
+            )}
+            data-testid="tab-favourites"
+          >
+            Favourites
+          </Button>
+          {(isAdmin || isSupport) && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setActiveTab("assigned")}
+              className={cn(
+                "rounded-full text-xs px-4",
+                activeTab === "assigned" 
+                  ? "bg-[#00a884] text-white hover:bg-[#00a884]" 
+                  : "bg-[#202c33] text-slate-300 hover:bg-[#2a3942]"
+              )}
+              data-testid="tab-assigned"
+            >
+              By Designer
+            </Button>
+          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button 
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "ml-auto hover:bg-white/5",
+                  filterTag ? "text-green-500" : "text-slate-400"
+                )}
+                data-testid="button-filter-tags"
+              >
+                <Filter className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent 
+              align="end"
+              style={{ backgroundColor: "#233138", borderColor: "#233138" }}
+            >
+              <DropdownMenuItem 
+                className={cn(
+                  "text-slate-200 hover:bg-white/5 cursor-pointer",
+                  !filterTag && "bg-white/10"
+                )}
+                onClick={() => setFilterTag(null)}
+              >
+                All Tags
+              </DropdownMenuItem>
+              <DropdownMenuSeparator style={{ backgroundColor: "#2a3942" }} />
+              {CHAT_TAGS.map(tag => (
+                <DropdownMenuItem
+                  key={tag}
+                  className={cn(
+                    "text-slate-200 hover:bg-white/5 cursor-pointer flex items-center gap-2",
+                    filterTag === tag && "bg-white/10"
+                  )}
+                  onClick={() => setFilterTag(filterTag === tag ? null : tag)}
+                  data-testid={`filter-tag-${tag.toLowerCase().replace(/\s+/g, "-")}`}
+                >
+                  <span 
+                    className="w-2 h-2 rounded-full"
+                    style={{ backgroundColor: TAG_COLORS[tag]?.hex }}
+                  />
+                  {tag}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         {/* Chat List */}
@@ -599,8 +770,10 @@ export default function WhatsAppPage() {
             <ScrollArea 
               className="flex-1 px-16 py-4"
               style={{ 
-                backgroundImage: "url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADIAAAAyCAMAAAAp4XiDAAAAUVBMVEWFhYWDg4N3d3dtbW17e3t1dXWBgYGHh4d5eXlzc3Oeli5Reli5ReijReli5Reli5Reli5Reli5Reli5Reli5Reli5Reli5VVVV2dnZ4eHg/P38teleY1CulAAAAG3RSTlNAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEAvEOwtAAABaklEQVR4AeXPW3KDMAwF0JvYJrYx75f9L7SjH1lpM/0w7Ug+T3eCEPR7aQYRSKbR8eXl+Hd6PWoNDowAP0+a2ZpJk0afJz1t1Zc0afJF0tPZRv0kfZ50tdZ+AAAA')",
-                backgroundColor: "#0b141a" 
+                backgroundImage: `url(${chatBgPattern})`,
+                backgroundSize: "cover",
+                backgroundPosition: "center",
+                backgroundRepeat: "repeat"
               }}
             >
               <div className="space-y-2 max-w-3xl mx-auto">
@@ -657,56 +830,170 @@ export default function WhatsAppPage() {
                 </div>
               )}
 
-              <div className="flex items-end gap-2">
-                <Button 
-                  variant="ghost"
-                  size="icon"
-                  className="text-slate-400 hover:bg-white/5"
-                  data-testid="button-emoji"
+              {/* Emoji Picker */}
+              {showEmojiPicker && (
+                <div 
+                  className="absolute bottom-20 left-4 rounded-lg border shadow-xl z-50 p-3"
+                  style={{ backgroundColor: "#233138", borderColor: "#2a3942" }}
                 >
-                  <Smile className="w-6 h-6" />
-                </Button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  className="hidden"
-                  onChange={handleFileSelect}
-                  accept="image/*,.pdf,.doc,.docx"
-                  data-testid="input-file-upload"
-                />
-                <Button 
-                  variant="ghost"
-                  size="icon"
-                  className="text-slate-400 hover:bg-white/5"
-                  onClick={() => fileInputRef.current?.click()}
-                  data-testid="button-attach-file"
-                >
-                  <Paperclip className="w-6 h-6" />
-                </Button>
-                <div className="flex-1">
-                  <Textarea
-                    ref={inputRef}
-                    placeholder="Type a message"
-                    className="border-0 text-white resize-none min-h-[40px] max-h-32 text-sm rounded-lg"
-                    style={{ backgroundColor: "#2a3942" }}
-                    value={messageText}
-                    onChange={handleInputChange}
-                    onKeyDown={handleKeyDown}
-                    rows={1}
-                    data-testid="input-message"
-                  />
+                  <div className="flex gap-2 mb-2 border-b pb-2" style={{ borderColor: "#2a3942" }}>
+                    {Object.keys(emojiCategories).map(cat => (
+                      <button
+                        key={cat}
+                        className="text-xs px-2 py-1 rounded text-slate-300 hover:bg-white/10 capitalize"
+                        onClick={() => {}}
+                      >
+                        {cat === "smileys" ? "😀" : cat === "gestures" ? "👋" : cat === "hearts" ? "❤️" : cat === "objects" ? "📱" : "🌸"}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-8 gap-1 max-h-48 overflow-y-auto">
+                    {Object.values(emojiCategories).flat().map((emoji, idx) => (
+                      <button
+                        key={idx}
+                        className="text-xl p-1 hover:bg-white/10 rounded"
+                        onClick={() => {
+                          insertEmoji(emoji);
+                          setShowEmojiPicker(false);
+                        }}
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleSend}
-                  disabled={(!messageText.trim() && !selectedFile) || sendMessageMutation.isPending}
-                  className="text-slate-400 hover:bg-white/5 disabled:opacity-50"
-                  data-testid="button-send-message"
-                >
-                  <Send className="w-6 h-6" />
-                </Button>
-              </div>
+              )}
+
+              {/* Voice Recording UI */}
+              {isRecording || audioBlob ? (
+                <div className="flex items-center gap-3 w-full">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={cancelRecording}
+                    className="text-red-400 hover:bg-white/5"
+                    data-testid="button-cancel-recording"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </Button>
+                  
+                  <div 
+                    className="flex-1 flex items-center gap-3 px-4 py-2 rounded-lg"
+                    style={{ backgroundColor: "#2a3942" }}
+                  >
+                    {isRecording ? (
+                      <>
+                        <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse" />
+                        <span className="text-white text-sm">{formatRecordingTime(recordingTime)}</span>
+                        <div className="flex-1 h-1 bg-white/20 rounded-full overflow-hidden">
+                          <div className="h-full bg-red-500 w-full animate-pulse" />
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <Mic className="w-5 h-5 text-green-500" />
+                        <span className="text-white text-sm">{formatRecordingTime(recordingTime)}</span>
+                        <span className="text-slate-400 text-sm">Voice message ready</span>
+                      </>
+                    )}
+                  </div>
+
+                  {isRecording ? (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={stopRecording}
+                      className="text-white bg-red-500 hover:bg-red-600 rounded-full"
+                      data-testid="button-stop-recording"
+                    >
+                      <Square className="w-4 h-4" />
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={sendVoiceMessage}
+                      className="text-white bg-[#00a884] hover:bg-[#00a884]/80 rounded-full"
+                      data-testid="button-send-voice"
+                    >
+                      <Send className="w-5 h-5" />
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-end gap-2">
+                  <Button 
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                    className={cn("text-slate-400 hover:bg-white/5", showEmojiPicker && "text-[#00a884]")}
+                    data-testid="button-emoji"
+                  >
+                    <Smile className="w-6 h-6" />
+                  </Button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    className="hidden"
+                    onChange={handleFileSelect}
+                    accept="image/*,.pdf,.doc,.docx"
+                    data-testid="input-file-upload"
+                  />
+                  <Button 
+                    variant="ghost"
+                    size="icon"
+                    className="text-slate-400 hover:bg-white/5"
+                    onClick={() => fileInputRef.current?.click()}
+                    data-testid="button-attach-file"
+                  >
+                    <Paperclip className="w-6 h-6" />
+                  </Button>
+                  <Button 
+                    variant="ghost"
+                    size="icon"
+                    className="text-slate-400 hover:bg-white/5"
+                    onClick={() => setShowCatalogDialog(true)}
+                    data-testid="button-catalog"
+                  >
+                    <Package className="w-6 h-6" />
+                  </Button>
+                  <div className="flex-1">
+                    <Textarea
+                      ref={inputRef}
+                      placeholder="Type a message"
+                      className="border-0 text-white resize-none min-h-[40px] max-h-32 text-sm rounded-lg"
+                      style={{ backgroundColor: "#2a3942" }}
+                      value={messageText}
+                      onChange={handleInputChange}
+                      onKeyDown={handleKeyDown}
+                      rows={1}
+                      data-testid="input-message"
+                    />
+                  </div>
+                  {messageText.trim() || selectedFile ? (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleSend}
+                      disabled={sendMessageMutation.isPending}
+                      className="text-slate-400 hover:bg-white/5 disabled:opacity-50"
+                      data-testid="button-send-message"
+                    >
+                      <Send className="w-6 h-6" />
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={startRecording}
+                      className="text-slate-400 hover:bg-white/5"
+                      data-testid="button-start-recording"
+                    >
+                      <Mic className="w-6 h-6" />
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
           </>
         ) : (
@@ -749,7 +1036,7 @@ export default function WhatsAppPage() {
               </p>
               
               <p className="text-sm text-slate-500">
-                Built by <span style={{ color: "#00a884" }}>Jazim Abbas</span> <span className="text-red-400">❤</span>
+                Built by <span style={{ color: "#00a884" }}>Pixely_Digital</span>
               </p>
             </div>
           </div>
@@ -854,6 +1141,50 @@ export default function WhatsAppPage() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Catalog Dialog */}
+      <Dialog open={showCatalogDialog} onOpenChange={setShowCatalogDialog}>
+        <DialogContent 
+          className="border max-w-md"
+          style={{ backgroundColor: "#233138", borderColor: "#2a3942" }}
+        >
+          <DialogHeader>
+            <DialogTitle className="text-slate-100">Send Catalog</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            {[
+              { id: 1, name: "ATS CV Service", price: "5,000", description: "Professional ATS-optimized CV" },
+              { id: 2, name: "LinkedIn Profile Optimization", price: "3,000", description: "Complete LinkedIn profile makeover" },
+              { id: 3, name: "Cover Letter", price: "2,000", description: "Customized cover letter writing" },
+              { id: 4, name: "Complete Package", price: "8,000", description: "CV + LinkedIn + Cover Letter" },
+              { id: 5, name: "Europass CV", price: "4,000", description: "European-style CV format" },
+            ].map(item => (
+              <button
+                key={item.id}
+                className="w-full p-3 rounded-lg text-left hover:bg-white/5 transition-colors flex items-center justify-between"
+                style={{ backgroundColor: "#2a3942" }}
+                onClick={() => {
+                  if (selectedChat) {
+                    const catalogMessage = `*${item.name}*\n${item.description}\n\nPrice: PKR ${item.price}`;
+                    sendMessageMutation.mutate({ 
+                      chatId: selectedChat.id, 
+                      content: catalogMessage 
+                    });
+                    setShowCatalogDialog(false);
+                  }
+                }}
+                data-testid={`catalog-item-${item.id}`}
+              >
+                <div>
+                  <div className="font-medium text-slate-100">{item.name}</div>
+                  <div className="text-sm text-slate-400">{item.description}</div>
+                </div>
+                <div className="text-[#00a884] font-medium">PKR {item.price}</div>
+              </button>
+            ))}
+          </div>
         </DialogContent>
       </Dialog>
     </div>
