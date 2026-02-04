@@ -114,18 +114,21 @@ export function Sidebar({ onNavigate }: SidebarProps) {
               // WhatsApp opens in a new tab
               if (isWhatsApp) {
                 return (
-                  <button
+                  <a
                     key={link.href}
-                    onClick={() => window.open("/whatsapp", "_blank")}
+                    href="/whatsapp"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={handleLinkClick}
                     className={cn(
-                      "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 group w-full text-left",
+                      "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 group",
                       "text-slate-400 hover:text-white hover:bg-slate-900"
                     )}
-                    data-testid="button-whatsapp"
+                    data-testid="link-whatsapp"
                   >
                     <Icon className="w-5 h-5 text-green-500 group-hover:text-green-400" />
                     <span className="flex-1">{link.label}</span>
-                  </button>
+                  </a>
                 );
               }
               

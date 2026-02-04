@@ -53,13 +53,13 @@ type ChatWithDetails = Chat & {
 
 const CHAT_TAGS = ["New", "Working", "Pending", "Changes", "Issues", "Satisfied Client"];
 
-const TAG_COLORS: Record<string, { bg: string; text: string }> = {
-  "New": { bg: "bg-blue-600", text: "text-white" },
-  "Working": { bg: "bg-purple-600", text: "text-white" },
-  "Pending": { bg: "bg-yellow-600", text: "text-white" },
-  "Changes": { bg: "bg-orange-600", text: "text-white" },
-  "Issues": { bg: "bg-red-600", text: "text-white" },
-  "Satisfied Client": { bg: "bg-green-600", text: "text-white" },
+const TAG_COLORS: Record<string, { bg: string; text: string; hex: string }> = {
+  "New": { bg: "bg-blue-600", text: "text-white", hex: "#2563eb" },
+  "Working": { bg: "bg-purple-600", text: "text-white", hex: "#9333ea" },
+  "Pending": { bg: "bg-yellow-600", text: "text-white", hex: "#ca8a04" },
+  "Changes": { bg: "bg-orange-600", text: "text-white", hex: "#ea580c" },
+  "Issues": { bg: "bg-red-600", text: "text-white", hex: "#dc2626" },
+  "Satisfied Client": { bg: "bg-green-600", text: "text-white", hex: "#16a34a" },
 };
 
 const AVATAR_COLORS = [
@@ -298,17 +298,17 @@ export default function WhatsAppPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button className="p-2 rounded-full hover:bg-white/5 text-slate-400">
+            <Button variant="ghost" size="icon" className="text-slate-400 hover:bg-white/5" data-testid="button-refresh">
               <RefreshCw className="w-5 h-5" />
-            </button>
-            <button className="p-2 rounded-full hover:bg-white/5 text-slate-400">
+            </Button>
+            <Button variant="ghost" size="icon" className="text-slate-400 hover:bg-white/5" data-testid="button-new-chat">
               <MessageSquarePlus className="w-5 h-5" />
-            </button>
+            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="p-2 rounded-full hover:bg-white/5 text-slate-400">
+                <Button variant="ghost" size="icon" className="text-slate-400 hover:bg-white/5" data-testid="button-menu">
                   <MoreVertical className="w-5 h-5" />
-                </button>
+                </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent 
                 align="end" 
@@ -348,14 +348,17 @@ export default function WhatsAppPage() {
             </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button 
+                <Button 
+                  variant="ghost"
+                  size="icon"
                   className={cn(
-                    "p-2 rounded-full hover:bg-white/5",
+                    "hover:bg-white/5",
                     filterTag ? "text-green-500" : "text-slate-400"
                   )}
+                  data-testid="button-filter-tags"
                 >
                   <Filter className="w-5 h-5" />
-                </button>
+                </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent 
                 align="end"
@@ -379,10 +382,11 @@ export default function WhatsAppPage() {
                       filterTag === tag && "bg-white/10"
                     )}
                     onClick={() => setFilterTag(filterTag === tag ? null : tag)}
+                    data-testid={`filter-tag-${tag.toLowerCase().replace(/\s+/g, "-")}`}
                   >
                     <span 
                       className="w-2 h-2 rounded-full"
-                      style={{ backgroundColor: TAG_COLORS[tag]?.bg.replace("bg-", "#").replace("-600", "") }}
+                      style={{ backgroundColor: TAG_COLORS[tag]?.hex }}
                     />
                     {tag}
                   </DropdownMenuItem>
@@ -518,9 +522,9 @@ export default function WhatsAppPage() {
                 
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <button className="p-2 rounded-full hover:bg-white/5 text-slate-400">
+                    <Button variant="ghost" size="icon" className="text-slate-400 hover:bg-white/5" data-testid="button-chat-menu">
                       <MoreVertical className="w-5 h-5" />
-                    </button>
+                    </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent 
                     align="end" 
@@ -535,12 +539,12 @@ export default function WhatsAppPage() {
                           toast({ title: "Copied", description: "Phone number copied" });
                         }
                       }}
+                      data-testid="menu-copy-phone"
                     >
                       Copy phone number
                     </DropdownMenuItem>
                     <DropdownMenuSeparator style={{ backgroundColor: "#2a3942" }} />
                     
-                    {/* Tags submenu */}
                     {CHAT_TAGS.map(tag => {
                       const isActive = (selectedChat.tags as string[] || []).includes(tag);
                       return (
@@ -548,6 +552,7 @@ export default function WhatsAppPage() {
                           key={tag}
                           className="text-slate-200 hover:bg-white/5 cursor-pointer flex items-center justify-between"
                           onClick={() => handleSetTag(tag)}
+                          data-testid={`menu-tag-${tag.toLowerCase().replace(/\s+/g, "-")}`}
                         >
                           <span>{tag}</span>
                           {isActive && <Check className="w-4 h-4 text-green-500" />}
@@ -562,6 +567,7 @@ export default function WhatsAppPage() {
                         <DropdownMenuItem 
                           className="text-slate-200 hover:bg-white/5 cursor-pointer"
                           onClick={() => setShowOrderPanel(true)}
+                          data-testid="menu-view-order"
                         >
                           View linked order
                         </DropdownMenuItem>
@@ -569,6 +575,7 @@ export default function WhatsAppPage() {
                           <DropdownMenuItem 
                             className="text-slate-200 hover:bg-white/5 cursor-pointer"
                             onClick={handleUnlinkOrder}
+                            data-testid="menu-unlink-order"
                           >
                             Unlink order
                           </DropdownMenuItem>
@@ -578,6 +585,7 @@ export default function WhatsAppPage() {
                       <DropdownMenuItem 
                         className="text-slate-200 hover:bg-white/5 cursor-pointer"
                         onClick={() => setShowLinkOrderDialog(true)}
+                        data-testid="menu-link-order"
                       >
                         Link to order
                       </DropdownMenuItem>
@@ -650,26 +658,31 @@ export default function WhatsAppPage() {
               )}
 
               <div className="flex items-end gap-2">
-                <button 
-                  className="p-2 rounded-full hover:bg-white/5 text-slate-400"
+                <Button 
+                  variant="ghost"
+                  size="icon"
+                  className="text-slate-400 hover:bg-white/5"
                   data-testid="button-emoji"
                 >
                   <Smile className="w-6 h-6" />
-                </button>
+                </Button>
                 <input
                   ref={fileInputRef}
                   type="file"
                   className="hidden"
                   onChange={handleFileSelect}
                   accept="image/*,.pdf,.doc,.docx"
+                  data-testid="input-file-upload"
                 />
-                <button 
-                  className="p-2 rounded-full hover:bg-white/5 text-slate-400"
+                <Button 
+                  variant="ghost"
+                  size="icon"
+                  className="text-slate-400 hover:bg-white/5"
                   onClick={() => fileInputRef.current?.click()}
                   data-testid="button-attach-file"
                 >
                   <Paperclip className="w-6 h-6" />
-                </button>
+                </Button>
                 <div className="flex-1">
                   <Textarea
                     ref={inputRef}
@@ -683,14 +696,16 @@ export default function WhatsAppPage() {
                     data-testid="input-message"
                   />
                 </div>
-                <button
+                <Button
+                  variant="ghost"
+                  size="icon"
                   onClick={handleSend}
                   disabled={(!messageText.trim() && !selectedFile) || sendMessageMutation.isPending}
-                  className="p-2 rounded-full hover:bg-white/5 text-slate-400 disabled:opacity-50"
+                  className="text-slate-400 hover:bg-white/5 disabled:opacity-50"
                   data-testid="button-send-message"
                 >
                   <Send className="w-6 h-6" />
-                </button>
+                </Button>
               </div>
             </div>
           </>
