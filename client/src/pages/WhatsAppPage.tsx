@@ -332,13 +332,17 @@ export default function WhatsAppPage() {
   };
 
   const cancelRecording = () => {
+    // Stop active recording if in progress
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      setAudioBlob(null);
-      if (recordingIntervalRef.current) {
-        clearInterval(recordingIntervalRef.current);
-      }
+    }
+    // Clear recording state whether recording or ready to send
+    setIsRecording(false);
+    setAudioBlob(null);
+    setRecordingTime(0);
+    audioChunksRef.current = [];
+    if (recordingIntervalRef.current) {
+      clearInterval(recordingIntervalRef.current);
     }
   };
 
