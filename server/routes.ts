@@ -13,6 +13,7 @@ import { promisify } from "util";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { ObjectStorageService, registerObjectStorageRoutes } from "./replit_integrations/object_storage";
 
 const scryptAsync = promisify(scrypt);
 
@@ -1599,18 +1600,35 @@ export async function registerRoutes(
     res.json(updatedVerifications.find(v => v.id === verificationId));
   });
 
-  // Serve payment screenshot files (authenticated)
-  app.get('/api/payment-files/:filename', requireAuth, (req, res) => {
+  // Serve payment screenshot files (authenticated) - serves from Object Storage
+  const objectStorageService = new ObjectStorageService();
+  
+  app.get('/api/payment-files/:filename', requireAuth, async (req, res) => {
     const filename = req.params.filename;
     const sanitized = path.basename(filename);
-    const filePath = path.join(process.cwd(), 'uploads', sanitized);
     
-    if (!fs.existsSync(filePath)) {
-      return res.sendStatus(404);
+    // First check if file exists in local uploads (for backwards compatibility)
+    const localFilePath = path.join(process.cwd(), 'uploads', sanitized);
+    if (fs.existsSync(localFilePath)) {
+      return res.sendFile(localFilePath);
     }
     
-    res.sendFile(filePath);
+    // Try to find in object storage
+    try {
+      const objectFile = await objectStorageService.searchPublicObject(`payments/${sanitized}`);
+      if (objectFile) {
+        await objectStorageService.downloadObject(objectFile, res);
+        return;
+      }
+    } catch (error) {
+      console.error("Error fetching from object storage:", error);
+    }
+    
+    return res.sendStatus(404);
   });
+
+  // Register object storage routes for new uploads
+  registerObjectStorageRoutes(app);
 
   // === SEED DATA ===
   await seedDatabase();

@@ -33,7 +33,7 @@ Three distinct roles are implemented:
 - **Key Data Models**: Users, Orders, Order Services, Chats, Messages, Notifications, Payment Verifications, Activity Logs, Message Shortcuts.
 - **Financial Data**: All monetary values are stored as integers (PKR paisa) and displayed in PKR (₨), with an `advanceAmount` and `remainingAmount` split.
 - **Order Flow**: Supports multi-service orders, role-based order visibility, and a comprehensive payment verification workflow. Orders are only considered active and financially relevant upon payment approval.
-- **File Storage**: Uploads for avatars, chat attachments, and payment screenshots are stored locally with secure access.
+- **File Storage**: New uploads use Replit Object Storage (cloud-based) which persists across development and production. Legacy files stored locally in `/uploads/` folder only work in development. Object storage module located at `server/replit_integrations/object_storage/`.
 
 ### Features
 - **Order Management**: Creation, editing, assignment, status tracking (New, Working, Ready, Delivered, Canceled), and soft deletion.
