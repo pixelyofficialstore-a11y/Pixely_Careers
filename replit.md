@@ -64,8 +64,8 @@ Three user roles with distinct permissions:
 ## External Dependencies
 
 ### Database
-- **PostgreSQL**: Primary database hosted on **Supabase**
-- **Connection**: Uses `SUPABASE_DATABASE_URL` environment variable (falls back to `DATABASE_URL`)
+- **PostgreSQL**: Replit's built-in PostgreSQL database (Neon-backed)
+- **Connection**: Uses `DATABASE_URL` environment variable
 - **connect-pg-simple**: Session storage in PostgreSQL
 - **Drizzle ORM**: Schema management with `npm run db:push` for migrations
 
@@ -184,6 +184,8 @@ All monetary values displayed in PKR (₨), stored as integers (cents) in the da
 - Admin can manually change Advance Payment Status (pending/approved/disapproved) via dropdown
 - Admin can manually change Payment Status (pending/paid) via dropdown
 - Non-admin users (Support/Designer) only see approved orders and cannot edit payment statuses
+- Database migrated from Supabase to Replit's built-in PostgreSQL (February 2026)
+- Today's Orders filter now strictly shows only orders created today (no active orders from previous days)
 
 ### Key Database Tables
 - **chats**: WhatsApp-ready chat records with tags, assignment, and linking to orders
