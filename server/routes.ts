@@ -883,7 +883,8 @@ export async function registerRoutes(
     const whatsappMessageId = await sendWhatsAppMessage(chat.clientPhone, message);
     
     if (!whatsappMessageId) {
-      return res.status(500).json({ error: "Failed to send WhatsApp message" });
+      console.error("WhatsApp send failed for chat:", chatId, "to:", chat.clientPhone);
+      return res.status(500).json({ error: "Failed to send WhatsApp message. Please check API credentials or try again." });
     }
 
     // Store the message in our database with the WhatsApp message ID
