@@ -280,6 +280,25 @@ export default function WhatsAppPage() {
     });
   };
 
+  // Mark chat as read mutation
+  const markAsReadMutation = useMutation({
+    mutationFn: async (chatId: number) => {
+      return apiRequest("POST", `/api/chats/${chatId}/mark-read`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
+    },
+  });
+
+  // Function to select chat and mark as read
+  const handleSelectChat = (chat: ChatWithDetails) => {
+    setSelectedChat(chat);
+    // Mark as read if there are unread messages
+    if (chat.unreadCount && chat.unreadCount > 0) {
+      markAsReadMutation.mutate(chat.id);
+    }
+  };
+
   // Common emojis for picker
   const emojiCategories = {
     smileys: ["😀", "😃", "😄", "😁", "😅", "😂", "🤣", "😊", "😇", "🙂", "😉", "😌", "😍", "🥰", "😘", "😋", "😛", "🤔", "🤗", "🤭", "🥳", "😎", "🤩", "😏", "😒", "😞", "😔", "😟", "😕", "🙁", "😣", "😖", "😫", "😩", "🥺", "😢", "😭", "😤", "😠", "😡", "🤬", "😈", "👿", "💀", "☠️", "💩", "🤡", "👹", "👺", "👻", "👽", "👾", "🤖"],
@@ -709,7 +728,7 @@ export default function WhatsAppPage() {
               return (
                 <button
                   key={chat.id}
-                  onClick={() => setSelectedChat(chat)}
+                  onClick={() => handleSelectChat(chat)}
                   className={cn(
                     "w-full flex items-center gap-3 px-3 py-3 hover:bg-white/5 transition-colors",
                     isSelected && "bg-white/10"
@@ -758,7 +777,7 @@ export default function WhatsAppPage() {
                     </div>
                     <div className="flex items-center gap-2 mt-0.5">
                       <div className="flex items-center gap-1 min-w-0 flex-1 overflow-hidden">
-                        <CheckCheck className="w-4 h-4 text-blue-400 flex-shrink-0" />
+                        <CheckCheck className="w-4 h-4 text-slate-400 flex-shrink-0" />
                         {chat.lastMessage?.includes(".pdf") || chat.lastMessage?.includes(".doc") ? (
                           <div className="flex items-center gap-1 text-sm text-slate-400 truncate">
                             <File className="w-3 h-3 flex-shrink-0" />
@@ -1652,7 +1671,7 @@ function MessageBubble({ message, onDelete }: { message: Message; onDelete?: () 
             {format(new Date(message.createdAt!), "HH:mm")}
           </span>
           {isAgent && (
-            <CheckCheck className="w-4 h-4" style={{ color: "#53bdeb" }} />
+            <CheckCheck className="w-4 h-4 text-slate-400" />
           )}
         </div>
       </div>

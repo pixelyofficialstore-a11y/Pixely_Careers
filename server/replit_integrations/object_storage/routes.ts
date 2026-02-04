@@ -63,9 +63,28 @@ export function registerObjectStorageRoutes(app: Express): void {
   });
 
   /**
+   * Serve WhatsApp uploaded objects (more specific route first).
+   *
+   * GET /objects/uploads/whatsapp/:filename
+   */
+  app.get("/objects/uploads/whatsapp/:filename", async (req, res) => {
+    try {
+      const objectPath = `/objects/uploads/whatsapp/${req.params.filename}`;
+      const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
+      await objectStorageService.downloadObject(objectFile, res);
+    } catch (error) {
+      console.error("Error serving WhatsApp object:", error);
+      if (error instanceof ObjectNotFoundError) {
+        return res.status(404).json({ error: "Object not found" });
+      }
+      return res.status(500).json({ error: "Failed to serve object" });
+    }
+  });
+
+  /**
    * Serve uploaded objects.
    *
-   * GET /objects/:objectId
+   * GET /objects/uploads/:objectId
    *
    * This serves files from object storage. For public files, no auth needed.
    * For protected files, add authentication middleware and ACL checks.

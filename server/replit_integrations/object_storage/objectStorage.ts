@@ -237,7 +237,37 @@ export class ObjectStorageService {
       requestedPermission: requestedPermission ?? ObjectPermission.READ,
     });
   }
+
+  // Upload an object to object storage directly
+  async uploadObject(objectPath: string, data: Buffer, contentType?: string): Promise<void> {
+    let entityDir = this.getPrivateObjectDir();
+    if (!entityDir.endsWith("/")) {
+      entityDir = `${entityDir}/`;
+    }
+    
+    // Extract the relative path from objectPath (remove /objects/ prefix)
+    let relativePath = objectPath;
+    if (objectPath.startsWith("/objects/")) {
+      relativePath = objectPath.slice("/objects/".length);
+    }
+    
+    const fullPath = `${entityDir}${relativePath}`;
+    const { bucketName, objectName } = parseObjectPath(fullPath);
+    const bucket = objectStorageClient.bucket(bucketName);
+    const file = bucket.file(objectName);
+    
+    const options: { contentType?: string } = {};
+    if (contentType) {
+      options.contentType = contentType;
+    }
+    
+    await file.save(data, options);
+    console.log(`Uploaded object to ${fullPath} with content type: ${contentType || 'default'}`);
+  }
 }
+
+// Create a singleton instance for easy use
+export const objectStorageServiceInstance = new ObjectStorageService();
 
 function parseObjectPath(path: string): {
   bucketName: string;

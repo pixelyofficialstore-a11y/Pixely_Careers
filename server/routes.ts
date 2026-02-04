@@ -13,7 +13,9 @@ import { promisify } from "util";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
-import { ObjectStorageService, registerObjectStorageRoutes } from "./replit_integrations/object_storage";
+import { ObjectStorageService, registerObjectStorageRoutes, objectStorageServiceInstance } from "./replit_integrations/object_storage";
+import { messages } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 const scryptAsync = promisify(scrypt);
 
@@ -581,6 +583,76 @@ export async function registerRoutes(
     return existingMessages.some(m => m.externalMessageId === externalMessageId);
   }
 
+  // Helper function to download media from WhatsApp and store in object storage
+  async function downloadWhatsAppMedia(mediaId: string, mediaType: string): Promise<{ url: string; fileName: string; mimeType: string } | null> {
+    if (!WHATSAPP_ACCESS_TOKEN) {
+      console.error("WhatsApp API credentials not configured");
+      return null;
+    }
+
+    try {
+      // Step 1: Get media URL from WhatsApp
+      const mediaInfoResponse = await fetch(
+        `${WHATSAPP_API_URL}/${mediaId}`,
+        {
+          headers: {
+            "Authorization": `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+          },
+        }
+      );
+
+      if (!mediaInfoResponse.ok) {
+        const error = await mediaInfoResponse.json();
+        console.error("WhatsApp media info error:", error);
+        return null;
+      }
+
+      const mediaInfo = await mediaInfoResponse.json();
+      const mediaUrl = mediaInfo.url;
+      const mimeType = mediaInfo.mime_type || "application/octet-stream";
+
+      // Step 2: Download the actual media file
+      const mediaDownloadResponse = await fetch(mediaUrl, {
+        headers: {
+          "Authorization": `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+        },
+      });
+
+      if (!mediaDownloadResponse.ok) {
+        console.error("Failed to download WhatsApp media");
+        return null;
+      }
+
+      const mediaBuffer = await mediaDownloadResponse.arrayBuffer();
+
+      // Step 3: Determine file extension
+      let extension = "bin";
+      if (mimeType.includes("audio")) {
+        extension = mimeType.includes("ogg") ? "ogg" : mimeType.includes("mp3") ? "mp3" : "m4a";
+      } else if (mimeType.includes("image")) {
+        extension = mimeType.includes("png") ? "png" : mimeType.includes("gif") ? "gif" : "jpg";
+      } else if (mimeType.includes("video")) {
+        extension = "mp4";
+      } else if (mimeType.includes("pdf")) {
+        extension = "pdf";
+      } else if (mimeType.includes("document") || mimeType.includes("msword")) {
+        extension = "doc";
+      }
+
+      const fileName = `whatsapp_${mediaType}_${Date.now()}.${extension}`;
+      const objectPath = `/objects/uploads/whatsapp/${fileName}`;
+
+      // Step 4: Store in object storage with proper content type
+      await objectStorageServiceInstance.uploadObject(objectPath, Buffer.from(mediaBuffer), mimeType);
+
+      console.log(`Downloaded and stored WhatsApp media: ${objectPath}`);
+      return { url: objectPath, fileName, mimeType };
+    } catch (error) {
+      console.error("Failed to download WhatsApp media:", error);
+      return null;
+    }
+  }
+
   // Helper function to upload media to WhatsApp and get media ID
   async function uploadMediaToWhatsApp(filePath: string, mimeType: string): Promise<string | null> {
     if (!WHATSAPP_PHONE_NUMBER_ID || !WHATSAPP_ACCESS_TOKEN) {
@@ -775,18 +847,68 @@ export async function registerRoutes(
                 const from = message.from; // Phone number of sender
                 const messageType = message.type;
                 let messageContent = "";
+                let fileUrl: string | undefined;
+                let fileName: string | undefined;
                 
-                // Extract message content based on type
+                // Extract message content based on type and download media if needed
                 if (messageType === "text") {
                   messageContent = message.text?.body || "";
                 } else if (messageType === "image") {
-                  messageContent = "[Image received]";
+                  const mediaId = message.image?.id;
+                  if (mediaId) {
+                    const mediaData = await downloadWhatsAppMedia(mediaId, "image");
+                    if (mediaData) {
+                      fileUrl = mediaData.url;
+                      fileName = mediaData.fileName;
+                      messageContent = message.image?.caption || "[Image received]";
+                    } else {
+                      messageContent = "[Image received - download failed]";
+                    }
+                  } else {
+                    messageContent = "[Image received]";
+                  }
                 } else if (messageType === "audio") {
-                  messageContent = "[Audio message received]";
+                  const mediaId = message.audio?.id;
+                  if (mediaId) {
+                    const mediaData = await downloadWhatsAppMedia(mediaId, "audio");
+                    if (mediaData) {
+                      fileUrl = mediaData.url;
+                      fileName = mediaData.fileName;
+                      messageContent = "[Voice message]";
+                    } else {
+                      messageContent = "[Voice message - download failed]";
+                    }
+                  } else {
+                    messageContent = "[Audio message received]";
+                  }
                 } else if (messageType === "document") {
-                  messageContent = "[Document received]";
+                  const mediaId = message.document?.id;
+                  if (mediaId) {
+                    const mediaData = await downloadWhatsAppMedia(mediaId, "document");
+                    if (mediaData) {
+                      fileUrl = mediaData.url;
+                      fileName = message.document?.filename || mediaData.fileName;
+                      messageContent = message.document?.caption || `[Document: ${fileName}]`;
+                    } else {
+                      messageContent = "[Document received - download failed]";
+                    }
+                  } else {
+                    messageContent = "[Document received]";
+                  }
                 } else if (messageType === "video") {
-                  messageContent = "[Video received]";
+                  const mediaId = message.video?.id;
+                  if (mediaId) {
+                    const mediaData = await downloadWhatsAppMedia(mediaId, "video");
+                    if (mediaData) {
+                      fileUrl = mediaData.url;
+                      fileName = mediaData.fileName;
+                      messageContent = message.video?.caption || "[Video received]";
+                    } else {
+                      messageContent = "[Video received - download failed]";
+                    }
+                  } else {
+                    messageContent = "[Video received]";
+                  }
                 } else {
                   messageContent = `[${messageType} message received]`;
                 }
@@ -824,15 +946,32 @@ export async function registerRoutes(
                   unreadCount: (chat.unreadCount || 0) + 1,
                 });
 
-                // Store the message
-                await storage.createMessage(
-                  chat.id,
-                  null, // No user (incoming from client)
-                  "client",
-                  messageContent,
-                  undefined, // No file
-                  message.id // WhatsApp message ID
-                );
+                // Store the message with file info if available
+                if (fileUrl) {
+                  await storage.createMessageWithFile(
+                    chat.id,
+                    null, // No user (incoming from client)
+                    "client",
+                    messageContent,
+                    fileUrl,
+                    fileName
+                  );
+                  // Update the external message ID
+                  const latestMessages = await storage.getChatMessages(chat.id);
+                  const latestMsg = latestMessages.find(m => m.fileUrl === fileUrl);
+                  if (latestMsg) {
+                    await db.update(messages).set({ externalMessageId: message.id }).where(eq(messages.id, latestMsg.id));
+                  }
+                } else {
+                  await storage.createMessage(
+                    chat.id,
+                    null, // No user (incoming from client)
+                    "client",
+                    messageContent,
+                    undefined, // No file
+                    message.id // WhatsApp message ID
+                  );
+                }
 
                 console.log(`Received WhatsApp message from ${from}: ${messageContent}`);
               }
@@ -1328,9 +1467,36 @@ export async function registerRoutes(
     res.json(updated);
   });
 
+  // Mark chat as read (reset unread count)
+  app.post("/api/chats/:id/mark-read", requireAuth, async (req, res) => {
+    const chatId = Number(req.params.id);
+    const chat = await storage.getChat(chatId);
+    if (!chat) return res.sendStatus(404);
+    
+    await storage.updateChat(chatId, { unreadCount: 0 });
+    res.json({ success: true });
+  });
+
   // Delete a message (admin/support only)
   app.delete("/api/messages/:id", requireRole(["admin", "support"]), async (req, res) => {
     const messageId = Number(req.params.id);
+    
+    // Get the message to check if it has a file
+    const message = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
+    if (message.length > 0 && message[0].fileUrl) {
+      // Delete the file from object storage if it's stored there
+      const fileUrl = message[0].fileUrl;
+      if (fileUrl.startsWith("/objects/")) {
+        try {
+          // Note: Object storage doesn't need file deletion as files will be garbage collected
+          // But we could implement deleteObject if needed in the future
+          console.log(`Deleting message with file: ${fileUrl}`);
+        } catch (error) {
+          console.error("Error deleting file:", error);
+        }
+      }
+    }
+    
     await storage.deleteMessage(messageId);
     res.sendStatus(204);
   });
