@@ -27,10 +27,11 @@ export interface IStorage {
 
   // Chats
   getChat(id: number): Promise<(Chat & { messages: Message[] }) | undefined>;
+  getChatByPhone(phone: string): Promise<Chat | undefined>;
   getChats(role: string, userId: number): Promise<Chat[]>;
   createChat(chat: InsertChat): Promise<Chat>;
   updateChat(id: number, updates: Partial<Chat>): Promise<Chat>;
-  createMessage(chatId: number, senderId: number | null, senderType: string, content: string): Promise<Message>;
+  createMessage(chatId: number, senderId: number | null, senderType: string, content: string, fileUrl?: string, externalMessageId?: string): Promise<Message>;
   createMessageWithFile(chatId: number, senderId: number | null, senderType: string, content: string, fileUrl?: string, fileName?: string): Promise<Message>;
   getMessageByFileUrl(chatId: number, fileUrl: string): Promise<Message | undefined>;
 
@@ -153,6 +154,11 @@ export class DatabaseStorage implements IStorage {
     return { ...chat, messages: chatMessages };
   }
 
+  async getChatByPhone(phone: string): Promise<Chat | undefined> {
+    const [chat] = await db.select().from(chats).where(eq(chats.clientPhone, phone));
+    return chat;
+  }
+
   async getChats(role: string, userId: number): Promise<Chat[]> {
     if (role === "admin" || role === "support") {
       return await db.select().from(chats).orderBy(desc(chats.lastMessageAt));
@@ -171,12 +177,14 @@ export class DatabaseStorage implements IStorage {
     return updatedChat;
   }
 
-  async createMessage(chatId: number, senderId: number | null, senderType: string, content: string): Promise<Message> {
+  async createMessage(chatId: number, senderId: number | null, senderType: string, content: string, fileUrl?: string, externalMessageId?: string): Promise<Message> {
     const [message] = await db.insert(messages).values({
       chatId,
       senderId,
       senderType,
       content,
+      fileUrl: fileUrl || null,
+      externalMessageId: externalMessageId || null,
     }).returning();
 
     // Update chat last message

@@ -161,7 +161,7 @@ export default function WhatsAppPage() {
   });
 
   const sendMessageMutation = useMutation({
-    mutationFn: async ({ chatId, content, file }: { chatId: number; content: string; file?: File }) => {
+    mutationFn: async ({ chatId, content, file, useWhatsApp }: { chatId: number; content: string; file?: File; useWhatsApp?: boolean }) => {
       if (file) {
         const formData = new FormData();
         formData.append("file", file);
@@ -172,6 +172,10 @@ export default function WhatsAppPage() {
           credentials: "include",
         }).then(res => res.json());
       }
+      // Send via WhatsApp API if chat has a phone number
+      if (useWhatsApp) {
+        return apiRequest("POST", `/api/chats/${chatId}/send-whatsapp`, { message: content });
+      }
       return apiRequest("POST", `/api/chats/${chatId}/messages`, { content });
     },
     onSuccess: () => {
@@ -180,6 +184,13 @@ export default function WhatsAppPage() {
       setMessageText("");
       setSelectedFile(null);
       setShowShortcuts(false);
+    },
+    onError: (error: Error) => {
+      toast({ 
+        title: "Failed to send", 
+        description: error.message || "Could not send message",
+        variant: "destructive"
+      });
     },
   });
 
@@ -313,10 +324,13 @@ export default function WhatsAppPage() {
 
   const handleSend = () => {
     if ((!messageText.trim() && !selectedFile) || !selectedChat) return;
+    // Use WhatsApp API if the chat has a phone number (real WhatsApp chat)
+    const useWhatsApp = !!selectedChat.clientPhone;
     sendMessageMutation.mutate({ 
       chatId: selectedChat.id, 
       content: messageText,
-      file: selectedFile || undefined
+      file: selectedFile || undefined,
+      useWhatsApp
     });
   };
 
@@ -1232,7 +1246,8 @@ export default function WhatsAppPage() {
                       const catalogMessage = `*${item.name}*\n${item.description || ''}\n\nPrice: PKR ${item.price.toLocaleString()}`;
                       sendMessageMutation.mutate({ 
                         chatId: selectedChat.id, 
-                        content: catalogMessage 
+                        content: catalogMessage,
+                        useWhatsApp: !!selectedChat.clientPhone
                       });
                       setShowCatalogDialog(false);
                     }

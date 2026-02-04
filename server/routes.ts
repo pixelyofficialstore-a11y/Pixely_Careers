@@ -504,6 +504,232 @@ export async function registerRoutes(
     res.sendStatus(204);
   });
 
+  // === WHATSAPP CLOUD API INTEGRATION ===
+  const WHATSAPP_API_URL = "https://graph.facebook.com/v18.0";
+  const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const WHATSAPP_ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN;
+  const WHATSAPP_VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN;
+
+  // Helper function to send WhatsApp message via Cloud API
+  // Returns the WhatsApp message ID on success, or null on failure
+  async function sendWhatsAppMessage(to: string, message: string): Promise<string | null> {
+    if (!WHATSAPP_PHONE_NUMBER_ID || !WHATSAPP_ACCESS_TOKEN) {
+      console.error("WhatsApp API credentials not configured");
+      return null;
+    }
+
+    try {
+      const response = await fetch(
+        `${WHATSAPP_API_URL}/${WHATSAPP_PHONE_NUMBER_ID}/messages`,
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            messaging_product: "whatsapp",
+            recipient_type: "individual",
+            to: to.replace(/[^0-9]/g, ""), // Remove non-numeric characters
+            type: "text",
+            text: { body: message },
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.error("WhatsApp API error:", error);
+        return null;
+      }
+
+      const result = await response.json();
+      console.log("WhatsApp message sent:", result);
+      // Return the message ID from WhatsApp response
+      const whatsappMessageId = result.messages?.[0]?.id || null;
+      return whatsappMessageId;
+    } catch (error) {
+      console.error("Failed to send WhatsApp message:", error);
+      return null;
+    }
+  }
+  
+  // Helper function to check if a message with externalMessageId already exists
+  async function messageExistsByExternalId(chatId: number, externalMessageId: string): Promise<boolean> {
+    const existingMessages = await storage.getChatMessages(chatId);
+    return existingMessages.some(m => m.externalMessageId === externalMessageId);
+  }
+
+  // WhatsApp Webhook Verification (GET) - Meta requires this for webhook setup
+  app.get("/api/whatsapp/webhook", (req: Request, res: Response) => {
+    const mode = req.query["hub.mode"];
+    const token = req.query["hub.verify_token"];
+    const challenge = req.query["hub.challenge"];
+
+    console.log("WhatsApp webhook verification request:", { mode, token, challenge });
+
+    if (mode === "subscribe" && token === WHATSAPP_VERIFY_TOKEN) {
+      console.log("WhatsApp webhook verified successfully");
+      res.status(200).send(challenge);
+    } else {
+      console.error("WhatsApp webhook verification failed");
+      res.sendStatus(403);
+    }
+  });
+
+  // WhatsApp Webhook for receiving messages (POST)
+  app.post("/api/whatsapp/webhook", async (req: Request, res: Response) => {
+    try {
+      const body = req.body;
+      console.log("WhatsApp webhook received:", JSON.stringify(body, null, 2));
+
+      // Check if this is a WhatsApp message notification
+      if (body.object === "whatsapp_business_account") {
+        const entries = body.entry || [];
+        
+        for (const entry of entries) {
+          const changes = entry.changes || [];
+          
+          for (const change of changes) {
+            if (change.field === "messages") {
+              const value = change.value;
+              const messages = value.messages || [];
+              const contacts = value.contacts || [];
+              
+              for (const message of messages) {
+                const from = message.from; // Phone number of sender
+                const messageType = message.type;
+                let messageContent = "";
+                
+                // Extract message content based on type
+                if (messageType === "text") {
+                  messageContent = message.text?.body || "";
+                } else if (messageType === "image") {
+                  messageContent = "[Image received]";
+                } else if (messageType === "audio") {
+                  messageContent = "[Audio message received]";
+                } else if (messageType === "document") {
+                  messageContent = "[Document received]";
+                } else if (messageType === "video") {
+                  messageContent = "[Video received]";
+                } else {
+                  messageContent = `[${messageType} message received]`;
+                }
+
+                // Get contact name if available
+                const contact = contacts.find((c: any) => c.wa_id === from);
+                const contactName = contact?.profile?.name || `+${from}`;
+
+                // Find or create chat for this phone number
+                let chat = await storage.getChatByPhone(`+${from}`);
+                
+                if (!chat) {
+                  // Create new chat for incoming message
+                  chat = await storage.createChat({
+                    clientName: contactName,
+                    clientPhone: `+${from}`,
+                    platform: "whatsapp",
+                    status: "new",
+                    lastMessage: messageContent,
+                    tags: ["New"],
+                  });
+                  console.log("Created new chat for incoming WhatsApp message:", chat.id);
+                }
+                
+                // Deduplication: Check if message with this ID already exists
+                const isDuplicate = await messageExistsByExternalId(chat.id, message.id);
+                if (isDuplicate) {
+                  console.log(`Duplicate message ${message.id} ignored`);
+                  continue;
+                }
+                
+                // Update existing chat with new message
+                await storage.updateChat(chat.id, {
+                  lastMessage: messageContent,
+                  unreadCount: (chat.unreadCount || 0) + 1,
+                });
+
+                // Store the message
+                await storage.createMessage(
+                  chat.id,
+                  null, // No user (incoming from client)
+                  "client",
+                  messageContent,
+                  undefined, // No file
+                  message.id // WhatsApp message ID
+                );
+
+                console.log(`Received WhatsApp message from ${from}: ${messageContent}`);
+              }
+            }
+          }
+        }
+      }
+
+      // Always respond with 200 to acknowledge receipt
+      res.sendStatus(200);
+    } catch (error) {
+      console.error("Error processing WhatsApp webhook:", error);
+      res.sendStatus(200); // Still return 200 to prevent retries
+    }
+  });
+
+  // Zod schema for WhatsApp message sending
+  const sendWhatsAppSchema = z.object({
+    message: z.string().min(1, "Message cannot be empty").max(4096, "Message too long")
+  });
+
+  // Endpoint to send WhatsApp message (called when staff sends message in UI)
+  app.post("/api/chats/:id/send-whatsapp", requireAuth, async (req: Request, res: Response) => {
+    const chatId = Number(req.params.id);
+    const user = req.user as User;
+
+    // Validate request body
+    const parseResult = sendWhatsAppSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return res.status(400).json({ error: parseResult.error.errors[0]?.message || "Invalid request" });
+    }
+    const { message } = parseResult.data;
+
+    const chat = await storage.getChat(chatId);
+    if (!chat) {
+      return res.sendStatus(404);
+    }
+
+    // Check permissions
+    if (user.role === "designer" && chat.assignedToId !== user.id) {
+      return res.sendStatus(403);
+    }
+
+    if (!chat.clientPhone) {
+      return res.status(400).json({ error: "Chat has no phone number for WhatsApp" });
+    }
+
+    // Send via WhatsApp Cloud API
+    const whatsappMessageId = await sendWhatsAppMessage(chat.clientPhone, message);
+    
+    if (!whatsappMessageId) {
+      return res.status(500).json({ error: "Failed to send WhatsApp message" });
+    }
+
+    // Store the message in our database with the WhatsApp message ID
+    const storedMessage = await storage.createMessage(
+      chatId,
+      user.id,
+      "agent",
+      message,
+      undefined, // No file
+      whatsappMessageId // Store the WhatsApp message ID for tracking
+    );
+
+    // Update chat's last message
+    await storage.updateChat(chatId, {
+      lastMessage: message,
+    });
+
+    res.json({ success: true, message: storedMessage });
+  });
+
   // Configure multer for catalog image uploads
   const catalogUploadsDir = path.join(process.cwd(), 'uploads', 'catalogs');
   if (!fs.existsSync(catalogUploadsDir)) {

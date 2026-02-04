@@ -136,8 +136,15 @@ All monetary values displayed in PKR (₨), stored as integers (cents) in the da
   - Designers can only update tags (and auto-unassign via "Satisfied Client")
   - Support can update tags, assignments, and order linking
   - Admin has full access
-- WhatsApp Cloud API integration ready (awaiting API credentials)
-- Send messages via /api/chats/:id/messages endpoint
+- WhatsApp Cloud API fully integrated (February 2026):
+  - Webhook endpoint: GET/POST /api/whatsapp/webhook for Meta verification and message receiving
+  - Outbound messaging: POST /api/chats/:id/send-whatsapp sends via WhatsApp Cloud API
+  - Inbound messages automatically create/update chats with proper phone number matching
+  - Message types supported: text, image, audio, document, video (with type indicators)
+  - External message IDs stored for tracking (externalMessageId field)
+  - Required secrets: WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_ACCESS_TOKEN, WHATSAPP_VERIFY_TOKEN
+- Send messages via /api/chats/:id/messages endpoint (internal storage only)
+- Send WhatsApp messages via /api/chats/:id/send-whatsapp (sends to WhatsApp + stores)
 - File upload support via multer (10MB limit, images/PDFs/docs)
 - Files stored in /uploads directory, served with authentication
 - ShortcutsPage for admin to manage message templates (CRUD)
