@@ -510,6 +510,26 @@ export async function registerRoutes(
   const WHATSAPP_ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN;
   const WHATSAPP_VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN;
 
+  // Helper function to format phone number for WhatsApp API (Pakistan format)
+  function formatPhoneForWhatsApp(phone: string): string {
+    // Remove all non-numeric characters
+    let cleaned = phone.replace(/[^0-9]/g, "");
+    
+    // Handle Pakistani numbers
+    if (cleaned.startsWith("03") && cleaned.length === 11) {
+      // Convert 03XX to 92XX (remove leading 0, add 92)
+      cleaned = "92" + cleaned.substring(1);
+    } else if (cleaned.startsWith("3") && cleaned.length === 10) {
+      // Already without leading 0, add 92
+      cleaned = "92" + cleaned;
+    } else if (!cleaned.startsWith("92") && cleaned.length === 10) {
+      // Assume Pakistani number without country code
+      cleaned = "92" + cleaned;
+    }
+    
+    return cleaned;
+  }
+
   // Helper function to send WhatsApp message via Cloud API
   // Returns the WhatsApp message ID on success, or null on failure
   async function sendWhatsAppMessage(to: string, message: string): Promise<string | null> {
@@ -530,7 +550,7 @@ export async function registerRoutes(
           body: JSON.stringify({
             messaging_product: "whatsapp",
             recipient_type: "individual",
-            to: to.replace(/[^0-9]/g, ""), // Remove non-numeric characters
+            to: formatPhoneForWhatsApp(to),
             type: "text",
             text: { body: message },
           }),
@@ -558,6 +578,160 @@ export async function registerRoutes(
   async function messageExistsByExternalId(chatId: number, externalMessageId: string): Promise<boolean> {
     const existingMessages = await storage.getChatMessages(chatId);
     return existingMessages.some(m => m.externalMessageId === externalMessageId);
+  }
+
+  // Helper function to upload media to WhatsApp and get media ID
+  async function uploadMediaToWhatsApp(filePath: string, mimeType: string): Promise<string | null> {
+    if (!WHATSAPP_PHONE_NUMBER_ID || !WHATSAPP_ACCESS_TOKEN) {
+      console.error("WhatsApp API credentials not configured");
+      return null;
+    }
+
+    try {
+      const FormData = (await import('form-data')).default;
+      const formData = new FormData();
+      formData.append('file', fs.createReadStream(filePath));
+      formData.append('type', mimeType);
+      formData.append('messaging_product', 'whatsapp');
+
+      const response = await fetch(
+        `${WHATSAPP_API_URL}/${WHATSAPP_PHONE_NUMBER_ID}/media`,
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+            ...formData.getHeaders(),
+          },
+          body: formData as any,
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.error("WhatsApp media upload error:", error);
+        return null;
+      }
+
+      const result = await response.json();
+      console.log("WhatsApp media uploaded:", result);
+      return result.id || null;
+    } catch (error) {
+      console.error("Failed to upload media to WhatsApp:", error);
+      return null;
+    }
+  }
+
+  // Helper function to send media message via WhatsApp
+  async function sendWhatsAppMediaMessage(
+    to: string, 
+    mediaType: "image" | "audio" | "document" | "video",
+    mediaId: string,
+    caption?: string,
+    filename?: string
+  ): Promise<string | null> {
+    if (!WHATSAPP_PHONE_NUMBER_ID || !WHATSAPP_ACCESS_TOKEN) {
+      console.error("WhatsApp API credentials not configured");
+      return null;
+    }
+
+    const formattedPhone = formatPhoneForWhatsApp(to);
+
+    try {
+      const mediaPayload: any = { id: mediaId };
+      if (caption && (mediaType === "image" || mediaType === "video" || mediaType === "document")) {
+        mediaPayload.caption = caption;
+      }
+      if (filename && mediaType === "document") {
+        mediaPayload.filename = filename;
+      }
+
+      const response = await fetch(
+        `${WHATSAPP_API_URL}/${WHATSAPP_PHONE_NUMBER_ID}/messages`,
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            messaging_product: "whatsapp",
+            recipient_type: "individual",
+            to: formattedPhone,
+            type: mediaType,
+            [mediaType]: mediaPayload,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.error("WhatsApp media message error:", error);
+        return null;
+      }
+
+      const result = await response.json();
+      console.log("WhatsApp media message sent:", result);
+      return result.messages?.[0]?.id || null;
+    } catch (error) {
+      console.error("Failed to send WhatsApp media message:", error);
+      return null;
+    }
+  }
+
+  // Helper function to send WhatsApp template message
+  async function sendWhatsAppTemplate(
+    to: string,
+    templateName: string,
+    languageCode: string = "en",
+    components?: any[]
+  ): Promise<string | null> {
+    if (!WHATSAPP_PHONE_NUMBER_ID || !WHATSAPP_ACCESS_TOKEN) {
+      console.error("WhatsApp API credentials not configured");
+      return null;
+    }
+
+    const formattedPhone = formatPhoneForWhatsApp(to);
+
+    try {
+      const templatePayload: any = {
+        name: templateName,
+        language: { code: languageCode },
+      };
+      if (components && components.length > 0) {
+        templatePayload.components = components;
+      }
+
+      const response = await fetch(
+        `${WHATSAPP_API_URL}/${WHATSAPP_PHONE_NUMBER_ID}/messages`,
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            messaging_product: "whatsapp",
+            recipient_type: "individual",
+            to: formattedPhone,
+            type: "template",
+            template: templatePayload,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.error("WhatsApp template error:", error);
+        return null;
+      }
+
+      const result = await response.json();
+      console.log("WhatsApp template sent:", result);
+      return result.messages?.[0]?.id || null;
+    } catch (error) {
+      console.error("Failed to send WhatsApp template:", error);
+      return null;
+    }
   }
 
   // WhatsApp Webhook Verification (GET) - Meta requires this for webhook setup
@@ -728,6 +902,184 @@ export async function registerRoutes(
     });
 
     res.json({ success: true, message: storedMessage });
+  });
+
+  // Configure multer for WhatsApp media uploads
+  const whatsappUploadsDir = path.join(process.cwd(), 'uploads', 'whatsapp');
+  if (!fs.existsSync(whatsappUploadsDir)) {
+    fs.mkdirSync(whatsappUploadsDir, { recursive: true });
+  }
+
+  const whatsappMediaStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+      cb(null, whatsappUploadsDir);
+    },
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      const filename = `wa-${Date.now()}${ext}`;
+      cb(null, filename);
+    },
+  });
+
+  const whatsappMediaUpload = multer({
+    storage: whatsappMediaStorage,
+    limits: { fileSize: 16 * 1024 * 1024 }, // 16MB limit for WhatsApp media
+    fileFilter: (req, file, cb) => {
+      const allowedTypes = [
+        'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+        'audio/ogg', 'audio/mpeg', 'audio/mp4', 'audio/amr', 'audio/aac',
+        'video/mp4', 'video/3gpp',
+        'application/pdf', 'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      ];
+      if (allowedTypes.includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        cb(new Error('File type not supported by WhatsApp'));
+      }
+    },
+  });
+
+  // Endpoint to send WhatsApp media message (image, audio, document, video)
+  app.post("/api/chats/:id/send-whatsapp-media", requireAuth, whatsappMediaUpload.single('media'), async (req: Request, res: Response) => {
+    const chatId = Number(req.params.id);
+    const user = req.user as User;
+    const { caption, mediaType } = req.body;
+    const file = req.file;
+
+    if (!file) {
+      return res.status(400).json({ error: "No media file provided" });
+    }
+
+    const chat = await storage.getChat(chatId);
+    if (!chat) {
+      return res.sendStatus(404);
+    }
+
+    // Check permissions
+    if (user.role === "designer" && chat.assignedToId !== user.id) {
+      return res.sendStatus(403);
+    }
+
+    if (!chat.clientPhone) {
+      return res.status(400).json({ error: "Chat has no phone number for WhatsApp" });
+    }
+
+    // Determine media type from file mimetype
+    let whatsappMediaType: "image" | "audio" | "document" | "video" = "document";
+    if (file.mimetype.startsWith('image/')) {
+      whatsappMediaType = "image";
+    } else if (file.mimetype.startsWith('audio/')) {
+      whatsappMediaType = "audio";
+    } else if (file.mimetype.startsWith('video/')) {
+      whatsappMediaType = "video";
+    }
+
+    // Upload media to WhatsApp
+    const mediaId = await uploadMediaToWhatsApp(file.path, file.mimetype);
+    if (!mediaId) {
+      return res.status(500).json({ error: "Failed to upload media to WhatsApp" });
+    }
+
+    // Send media via WhatsApp
+    const whatsappMessageId = await sendWhatsAppMediaMessage(
+      chat.clientPhone,
+      whatsappMediaType,
+      mediaId,
+      caption,
+      file.originalname
+    );
+
+    if (!whatsappMessageId) {
+      return res.status(500).json({ error: "Failed to send WhatsApp media message" });
+    }
+
+    // Store the message in our database
+    const displayMessage = caption || `[${whatsappMediaType.charAt(0).toUpperCase() + whatsappMediaType.slice(1)} sent]`;
+    const storedMessage = await storage.createMessage(
+      chatId,
+      user.id,
+      "agent",
+      displayMessage,
+      `/api/whatsapp-media/${file.filename}`,
+      whatsappMessageId
+    );
+
+    // Update chat's last message
+    await storage.updateChat(chatId, {
+      lastMessage: displayMessage,
+    });
+
+    res.json({ success: true, message: storedMessage });
+  });
+
+  // Endpoint to send WhatsApp template message
+  app.post("/api/chats/:id/send-whatsapp-template", requireAuth, async (req: Request, res: Response) => {
+    const chatId = Number(req.params.id);
+    const user = req.user as User;
+    const { templateName, languageCode, components } = req.body;
+
+    if (!templateName) {
+      return res.status(400).json({ error: "Template name is required" });
+    }
+
+    const chat = await storage.getChat(chatId);
+    if (!chat) {
+      return res.sendStatus(404);
+    }
+
+    // Check permissions
+    if (user.role === "designer" && chat.assignedToId !== user.id) {
+      return res.sendStatus(403);
+    }
+
+    if (!chat.clientPhone) {
+      return res.status(400).json({ error: "Chat has no phone number for WhatsApp" });
+    }
+
+    // Send template via WhatsApp
+    const whatsappMessageId = await sendWhatsAppTemplate(
+      chat.clientPhone,
+      templateName,
+      languageCode || "en",
+      components
+    );
+
+    if (!whatsappMessageId) {
+      return res.status(500).json({ error: "Failed to send WhatsApp template. Make sure the template is approved." });
+    }
+
+    // Store the message in our database
+    const displayMessage = `[Template: ${templateName}]`;
+    const storedMessage = await storage.createMessage(
+      chatId,
+      user.id,
+      "agent",
+      displayMessage,
+      undefined,
+      whatsappMessageId
+    );
+
+    // Update chat's last message
+    await storage.updateChat(chatId, {
+      lastMessage: displayMessage,
+    });
+
+    res.json({ success: true, message: storedMessage });
+  });
+
+  // Serve WhatsApp media files
+  app.get("/api/whatsapp-media/:filename", requireAuth, (req: Request, res: Response) => {
+    const filename = req.params.filename as string;
+    const filePath = path.join(whatsappUploadsDir, filename);
+    
+    if (!fs.existsSync(filePath)) {
+      return res.sendStatus(404);
+    }
+    
+    res.sendFile(filePath);
   });
 
   // Configure multer for catalog image uploads
