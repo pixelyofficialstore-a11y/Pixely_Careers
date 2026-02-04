@@ -106,14 +106,27 @@ All monetary values displayed in PKR (₨), stored as integers (cents) in the da
   - Designer Performance: tracks completions based on readyDate (Working→Ready transitions)
   - Marketing Analytics: Campaign → Ad Set → Creative hierarchy breakdown
 
-### Chats Module (January 30, 2026)
-- Full chat UI implemented with chat list sidebar and messaging interface
+### WhatsApp Module (February 2026)
+- Renamed "Chats" section to "WhatsApp" with WhatsApp icon in sidebar
+- Route changed from /chats to /whatsapp
+- Full chat UI with chat list sidebar and messaging interface
 - Tab navigation: All Chats, New (with unread count), By Designer grouping
 - Search functionality to filter by client name or phone number
 - Message shortcuts system with 6 default templates (type "/" to access)
-- Tags support for chats: New, Changes, Satisfied, Issues
+- Updated tag system: New, Working, Pending, Changes, Issues, Satisfied Client
+- Auto-unassign logic: When designer sets "Satisfied Client" tag, chat is automatically unassigned
 - Role-based visibility: Admin/Support see all chats, Designer sees only assigned
-- WhatsApp integration ready (awaiting API credentials)
+- Order linking feature via 3-dot menu:
+  - Admin/Support can link/unlink chats to orders
+  - View linked order details dialog with client info, status, payment info (admin only)
+  - One-click navigation to Orders page
+  - Designers can view linked orders but cannot link/unlink
+- Backend enforces role-based permissions:
+  - Tag values validated against allowed list
+  - Designers can only update tags (and auto-unassign via "Satisfied Client")
+  - Support can update tags, assignments, and order linking
+  - Admin has full access
+- WhatsApp Cloud API integration ready (awaiting API credentials)
 - Send messages via /api/chats/:id/messages endpoint
 - File upload support via multer (10MB limit, images/PDFs/docs)
 - Files stored in /uploads directory, served with authentication

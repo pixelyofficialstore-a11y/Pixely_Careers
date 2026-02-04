@@ -502,7 +502,7 @@ export async function registerRoutes(
   };
 
   // File upload for messages
-  app.post("/api/chats/:id/messages/upload", requireAuth, upload.single('file'), handleMulterError, async (req, res) => {
+  app.post("/api/chats/:id/messages/upload", requireAuth, upload.single('file'), handleMulterError, async (req: express.Request, res: express.Response) => {
     const chatId = Number(req.params.id);
     const user = req.user as User;
     
@@ -576,21 +576,58 @@ export async function registerRoutes(
     res.json(messages);
   });
 
+  // Valid chat tags
+  const VALID_CHAT_TAGS = ["New", "Working", "Pending", "Changes", "Issues", "Satisfied Client"];
+  
   // Update chat endpoint
   app.patch("/api/chats/:id", requireAuth, async (req, res) => {
     const chatId = Number(req.params.id);
-    const updates = req.body;
+    let updates = req.body;
     const user = req.user as User;
     
     const chat = await storage.getChat(chatId);
     if (!chat) return res.sendStatus(404);
     
-    // Only admin/support can update chat assignment and linking
+    // Validate tags if provided
+    if (updates.tags) {
+      const tags = updates.tags as string[];
+      if (!Array.isArray(tags) || tags.some(t => !VALID_CHAT_TAGS.includes(t))) {
+        return res.status(400).json({ error: "Invalid tags" });
+      }
+    }
+    
+    // Designers can only update tags (and assignedToId only when setting "Satisfied Client")
     if (user.role === 'designer') {
+      // Check if designer is assigned to this chat
+      if (chat.assignedToId !== user.id) {
+        return res.sendStatus(403);
+      }
+      
       const allowedUpdates = ['tags'];
       const keys = Object.keys(updates);
-      if (keys.some(k => !allowedUpdates.includes(k))) return res.sendStatus(403);
+      
+      // Allow assignedToId update only when setting "Satisfied Client" tag (auto-unassign)
+      const tags = updates.tags as string[] | undefined;
+      const isSatisfiedClient = tags?.includes("Satisfied Client");
+      
+      if (isSatisfiedClient) {
+        // Force unassign when designer marks as "Satisfied Client"
+        updates = { ...updates, assignedToId: null };
+        allowedUpdates.push('assignedToId');
+      }
+      
+      if (keys.some(k => !allowedUpdates.includes(k))) {
+        return res.sendStatus(403);
+      }
+    } else if (user.role === 'support') {
+      // Support can update: tags, assignedToId, linkedOrderId
+      const allowedUpdates = ['tags', 'assignedToId', 'linkedOrderId'];
+      const keys = Object.keys(updates);
+      if (keys.some(k => !allowedUpdates.includes(k))) {
+        return res.sendStatus(403);
+      }
     }
+    // Admin can update all fields
     
     const updated = await storage.updateChat(chatId, updates);
     res.json(updated);

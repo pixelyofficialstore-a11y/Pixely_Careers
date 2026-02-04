@@ -4,7 +4,6 @@ import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { 
   LayoutDashboard, 
-  MessageSquare, 
   FileText, 
   Users, 
   BarChart3, 
@@ -13,6 +12,7 @@ import {
   CreditCard,
   Camera
 } from "lucide-react";
+import { SiWhatsapp } from "react-icons/si";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { queryClient } from "@/lib/queryClient";
@@ -81,7 +81,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
   const links = [
     { href: "/", label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "support", "designer"] },
     { href: "/orders", label: "Orders", icon: FileText, roles: ["admin", "support", "designer"] },
-    { href: "/chats", label: "Chats", icon: MessageSquare, roles: ["admin", "support", "designer"] },
+    { href: "/whatsapp", label: "WhatsApp", icon: SiWhatsapp, roles: ["admin", "support", "designer"] },
     { href: "/payments", label: "Payments", icon: CreditCard, roles: ["admin", "support", "designer"] },
     { href: "/users", label: "Team", icon: Users, roles: ["admin"] },
     { href: "/stats", label: "Analytics", icon: BarChart3, roles: ["admin"] },

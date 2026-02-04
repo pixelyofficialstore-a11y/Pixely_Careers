@@ -13,7 +13,7 @@ import { Loader2 } from "lucide-react";
 import OrdersPage from "@/pages/OrdersPage";
 import TeamPage from "@/pages/TeamPage";
 import AnalyticsPage from "@/pages/AnalyticsPage";
-import ChatsPage from "@/pages/ChatsPage";
+import WhatsAppPage from "@/pages/WhatsAppPage";
 import ShortcutsPage from "@/pages/ShortcutsPage";
 import PaymentsPage from "@/pages/PaymentsPage";
 
@@ -55,10 +55,10 @@ function Router() {
           </Layout>
         </ProtectedRoute>
       </Route>
-      <Route path="/chats">
+      <Route path="/whatsapp">
         <ProtectedRoute>
           <Layout>
-            <ChatsPage />
+            <WhatsAppPage />
           </Layout>
         </ProtectedRoute>
       </Route>

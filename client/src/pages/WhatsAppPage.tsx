@@ -18,18 +18,18 @@ import {
   Search,
   Send,
   MoreHorizontal,
-  MessageSquare,
   ExternalLink,
   Copy,
-  Share2,
   ChevronDown,
-  CheckCircle,
   Paperclip,
   Check,
   X,
-  Image,
   File,
+  LinkIcon,
+  ImageIcon,
+  CheckCircle,
 } from "lucide-react";
+import { SiWhatsapp } from "react-icons/si";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,7 +39,8 @@ import {
 import { format } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { Chat, Message, User, MessageShortcut } from "@shared/schema";
+import type { Chat, Message, User, MessageShortcut, Order } from "@shared/schema";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
 type ChatWithDetails = Chat & {
@@ -47,17 +48,15 @@ type ChatWithDetails = Chat & {
   assignee?: User | null;
 };
 
-const CHAT_TAGS = ["New", "Changes", "Satisfied", "Issues"];
+const CHAT_TAGS = ["New", "Working", "Pending", "Changes", "Issues", "Satisfied Client"];
 
 const TAG_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
   "New": { bg: "bg-blue-500/20", text: "text-blue-400", dot: "bg-blue-500" },
-  "New Inquiry": { bg: "bg-blue-500/20", text: "text-blue-400", dot: "bg-blue-500" },
-  "Changes": { bg: "bg-yellow-500/20", text: "text-yellow-400", dot: "bg-yellow-500" },
-  "Satisfied": { bg: "bg-green-500/20", text: "text-green-400", dot: "bg-green-500" },
+  "Working": { bg: "bg-purple-500/20", text: "text-purple-400", dot: "bg-purple-500" },
+  "Pending": { bg: "bg-yellow-500/20", text: "text-yellow-400", dot: "bg-yellow-500" },
+  "Changes": { bg: "bg-orange-500/20", text: "text-orange-400", dot: "bg-orange-500" },
   "Issues": { bg: "bg-red-500/20", text: "text-red-400", dot: "bg-red-500" },
-  "Issue": { bg: "bg-red-500/20", text: "text-red-400", dot: "bg-red-500" },
-  "Pending Payment": { bg: "bg-emerald-500/20", text: "text-emerald-400", dot: "bg-emerald-500" },
-  "Urgent": { bg: "bg-orange-500/20", text: "text-orange-400", dot: "bg-orange-500" },
+  "Satisfied Client": { bg: "bg-green-500/20", text: "text-green-400", dot: "bg-green-500" },
 };
 
 const AVATAR_COLORS = [
@@ -74,7 +73,7 @@ function getAvatarColor(name: string) {
   return AVATAR_COLORS[index];
 }
 
-export default function ChatsPage() {
+export default function WhatsAppPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [search, setSearch] = useState("");
@@ -84,6 +83,8 @@ export default function ChatsPage() {
   const [filterTag, setFilterTag] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedDesignerFilter, setSelectedDesignerFilter] = useState<string>("all");
+  const [showOrderPanel, setShowOrderPanel] = useState(false);
+  const [showLinkOrderDialog, setShowLinkOrderDialog] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -112,6 +113,12 @@ export default function ChatsPage() {
   const { data: shortcuts } = useQuery<MessageShortcut[]>({
     queryKey: ["/api/shortcuts"],
   });
+
+  const { data: orders } = useQuery<Order[]>({
+    queryKey: ["/api/orders"],
+  });
+
+  const linkedOrder = orders?.find(o => o.id === selectedChat?.linkedOrderId);
 
   const designers = teamMembers?.filter(u => u.role === "designer") || [];
 
@@ -150,6 +157,23 @@ export default function ChatsPage() {
       toast({ title: "Updated", description: "Chat updated successfully" });
     },
   });
+
+  const handleLinkOrder = (orderId: number) => {
+    if (!selectedChat) return;
+    updateChatMutation.mutate({
+      id: selectedChat.id,
+      updates: { linkedOrderId: orderId }
+    });
+    setShowLinkOrderDialog(false);
+  };
+
+  const handleUnlinkOrder = () => {
+    if (!selectedChat) return;
+    updateChatMutation.mutate({
+      id: selectedChat.id,
+      updates: { linkedOrderId: null }
+    });
+  };
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -204,9 +228,20 @@ export default function ChatsPage() {
 
   const handleSetTag = (newTag: string) => {
     if (!selectedChat) return;
+    
+    const updates: Partial<Chat> = { tags: [newTag] };
+    
+    if (newTag === "Satisfied Client" && isDesigner) {
+      updates.assignedToId = null;
+      toast({ 
+        title: "Chat Completed", 
+        description: "Chat marked as satisfied and unassigned. Great work!" 
+      });
+    }
+    
     updateChatMutation.mutate({ 
       id: selectedChat.id, 
-      updates: { tags: [newTag] } 
+      updates
     });
   };
 
@@ -290,8 +325,8 @@ export default function ChatsPage() {
         {/* Header */}
         <div className="p-3 border-b border-slate-800">
           <div className="flex items-center gap-2 mb-3">
-            <MessageSquare className="w-5 h-5 text-blue-500" />
-            <h2 className="text-lg font-bold text-white">Chats</h2>
+            <SiWhatsapp className="w-5 h-5 text-green-500" />
+            <h2 className="text-lg font-bold text-white">WhatsApp</h2>
           </div>
           
           <div className="relative">
@@ -572,9 +607,34 @@ export default function ChatsPage() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="bg-slate-900 border-slate-700">
-                      <DropdownMenuItem className="text-slate-300">View Order</DropdownMenuItem>
-                      <DropdownMenuItem className="text-slate-300">Mark as Read</DropdownMenuItem>
-                      <DropdownMenuItem className="text-red-400">Archive Chat</DropdownMenuItem>
+                      {linkedOrder ? (
+                        <>
+                          <DropdownMenuItem 
+                            className="text-slate-300"
+                            onClick={() => setShowOrderPanel(true)}
+                          >
+                            <LinkIcon className="w-4 h-4 mr-2" />
+                            View Order ({linkedOrder.orderNumber || `#${linkedOrder.id}`})
+                          </DropdownMenuItem>
+                          {(isAdmin || isSupport) && (
+                            <DropdownMenuItem 
+                              className="text-slate-300"
+                              onClick={handleUnlinkOrder}
+                            >
+                              <X className="w-4 h-4 mr-2" />
+                              Unlink Order
+                            </DropdownMenuItem>
+                          )}
+                        </>
+                      ) : (isAdmin || isSupport) ? (
+                        <DropdownMenuItem 
+                          className="text-slate-300"
+                          onClick={() => setShowLinkOrderDialog(true)}
+                        >
+                          <LinkIcon className="w-4 h-4 mr-2" />
+                          Link to Order
+                        </DropdownMenuItem>
+                      ) : null}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
@@ -621,7 +681,7 @@ export default function ChatsPage() {
               {selectedFile && (
                 <div className="mb-2 p-2 bg-slate-800 rounded-lg flex items-center gap-2 max-w-xs">
                   {selectedFile.type.startsWith("image/") ? (
-                    <Image className="w-5 h-5 text-blue-400" />
+                    <ImageIcon className="w-5 h-5 text-blue-400" />
                   ) : (
                     <File className="w-5 h-5 text-blue-400" />
                   )}
@@ -680,13 +740,105 @@ export default function ChatsPage() {
         ) : (
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
-              <MessageSquare className="w-16 h-16 text-slate-700 mx-auto mb-4" />
+              <SiWhatsapp className="w-16 h-16 text-slate-700 mx-auto mb-4" />
               <h3 className="text-xl font-bold text-white mb-2">Select a Chat</h3>
               <p className="text-slate-400">Choose a conversation from the sidebar</p>
             </div>
           </div>
         )}
       </div>
+
+      {/* Link Order Dialog */}
+      <Dialog open={showLinkOrderDialog} onOpenChange={setShowLinkOrderDialog}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
+          <DialogHeader>
+            <DialogTitle>Link to Order</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 max-h-80 overflow-y-auto">
+            {orders?.filter(o => o.advancePaymentStatus === "approved").map(order => (
+              <button
+                key={order.id}
+                className="w-full text-left p-3 rounded-lg bg-slate-800 hover:bg-slate-700 transition-colors"
+                onClick={() => handleLinkOrder(order.id)}
+                data-testid={`link-order-${order.id}`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">{order.orderNumber || `Order #${order.id}`}</span>
+                  <Badge variant="outline" className="text-xs">
+                    {order.status}
+                  </Badge>
+                </div>
+                <p className="text-sm text-slate-400 mt-1">{order.clientName}</p>
+              </button>
+            ))}
+            {(!orders || orders.filter(o => o.advancePaymentStatus === "approved").length === 0) && (
+              <p className="text-center text-slate-400 py-4">No orders available</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Order Details Panel */}
+      <Dialog open={showOrderPanel} onOpenChange={setShowOrderPanel}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <LinkIcon className="w-5 h-5 text-blue-500" />
+              Linked Order Details
+            </DialogTitle>
+          </DialogHeader>
+          {linkedOrder && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs text-slate-400 mb-1">Order ID</p>
+                  <p className="font-medium">{linkedOrder.orderNumber || `#${linkedOrder.id}`}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-400 mb-1">Status</p>
+                  <Badge className="capitalize">{linkedOrder.status}</Badge>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-400 mb-1">Client</p>
+                  <p className="font-medium">{linkedOrder.clientName}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-400 mb-1">Phone</p>
+                  <p className="font-medium">{linkedOrder.clientPhone || "—"}</p>
+                </div>
+                {isAdmin && (
+                  <>
+                    <div>
+                      <p className="text-xs text-slate-400 mb-1">Total Price</p>
+                      <p className="font-medium">₨{((linkedOrder.totalPrice || 0) / 100).toLocaleString()}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-400 mb-1">Payment Status</p>
+                      <Badge variant={linkedOrder.paymentStatus === "paid" ? "default" : "secondary"}>
+                        {linkedOrder.paymentStatus}
+                      </Badge>
+                    </div>
+                  </>
+                )}
+              </div>
+              <div className="flex gap-2 pt-4 border-t border-slate-700">
+                <Button 
+                  variant="outline" 
+                  className="flex-1"
+                  onClick={() => {
+                    setShowOrderPanel(false);
+                    window.location.href = "/orders";
+                  }}
+                  data-testid="button-go-to-orders"
+                >
+                  <ExternalLink className="w-4 h-4 mr-2" />
+                  Go to Orders
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
