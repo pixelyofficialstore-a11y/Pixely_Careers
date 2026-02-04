@@ -271,7 +271,6 @@ export async function registerRoutes(
       
       orderSchema.parse(orderData);
       
-      const orderNumber = await storage.generateOrderNumber();
       const user = req.user as User;
       
       // Store intended designer but don't assign until payment is approved
@@ -281,6 +280,7 @@ export async function registerRoutes(
       // Finance amounts will be updated only when payment is approved
       const totalPrice = orderData.totalPrice || 0;
       
+      // Order number is NOT generated until payment is approved
       const order = await storage.createOrder({
         ...orderData,
         totalPrice: totalPrice,
@@ -290,7 +290,7 @@ export async function registerRoutes(
         assignedToId: null, // Don't assign until payment approved
         intendedDesignerId: intendedDesignerId || null, // Store intended designer for later assignment
         advancePaymentStatus: "pending", // Pending payment verification
-        orderNumber,
+        orderNumber: null, // No order number until payment is approved
         createdById: user.id,
       }, services);
 
@@ -735,10 +735,14 @@ export async function registerRoutes(
     const currentRemaining = order.remainingAmount || 0;
     
     if (verification.paymentType === 'advance') {
+      // Generate order number now that payment is approved
+      const orderNumber = await storage.generateOrderNumber();
+      
       // Advance payment: add to collected amount, set remaining, assign designer, set status
       const newAdvance = currentAdvance + verification.amount;
       const newRemaining = Math.max(0, (order.totalPrice || 0) - newAdvance);
       await storage.updateOrder(order.id, {
+        orderNumber, // Assign order number on approval
         advanceAmount: newAdvance,
         remainingAmount: newRemaining,
         paymentStatus: newRemaining === 0 ? "paid" : "pending",
@@ -749,11 +753,15 @@ export async function registerRoutes(
       
       // Notify designer of assignment
       if (order.intendedDesignerId) {
-        await storage.createNotification(order.intendedDesignerId, "assignment", `New order assigned: ${order.orderNumber}`, order.id, "order");
+        await storage.createNotification(order.intendedDesignerId, "assignment", `New order assigned: ${orderNumber}`, order.id, "order");
       }
     } else if (verification.paymentType === 'full') {
+      // Generate order number now that payment is approved
+      const orderNumber = await storage.generateOrderNumber();
+      
       // Full payment: mark as fully paid, assign designer, set status
       await storage.updateOrder(order.id, {
+        orderNumber, // Assign order number on approval
         advanceAmount: order.totalPrice, // Full amount collected
         remainingAmount: 0,
         paymentStatus: "paid",
@@ -764,7 +772,7 @@ export async function registerRoutes(
       
       // Notify designer of assignment
       if (order.intendedDesignerId) {
-        await storage.createNotification(order.intendedDesignerId, "assignment", `New order assigned: ${order.orderNumber}`, order.id, "order");
+        await storage.createNotification(order.intendedDesignerId, "assignment", `New order assigned: ${orderNumber}`, order.id, "order");
       }
     } else if (verification.paymentType === 'remaining') {
       // Remaining payment: add remaining to collected, clear remaining

@@ -32,7 +32,7 @@ export const users = pgTable("users", {
 // Orders
 export const orders = pgTable("orders", {
   id: serial("id").primaryKey(),
-  orderNumber: text("order_number").notNull().unique(), // e.g. PX-260-001
+  orderNumber: text("order_number").unique(), // e.g. PX-260-001 - null until payment approved
   clientName: text("client_name").notNull(),
   clientPhone: text("client_phone"),
   clientEmail: text("client_email"),

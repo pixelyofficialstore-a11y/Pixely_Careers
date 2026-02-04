@@ -5,7 +5,7 @@ import {
   type PaymentVerification, type InsertPaymentVerification, type PaymentVerificationWithUsers
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, sql, and } from "drizzle-orm";
+import { eq, desc, sql, and, isNotNull } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -134,8 +134,9 @@ export class DatabaseStorage implements IStorage {
   async generateOrderNumber(): Promise<string> {
     const year = new Date().getFullYear().toString().slice(-2);
     const month = (new Date().getMonth() + 1).toString().padStart(2, '0');
-    const allOrders = await db.select().from(orders);
-    const count = allOrders.length + 1;
+    // Only count orders that have been assigned an order number (approved orders)
+    const approvedOrders = await db.select().from(orders).where(isNotNull(orders.orderNumber));
+    const count = approvedOrders.length + 1;
     return `PX-${year}${month}-${count.toString().padStart(3, '0')}`;
   }
 
@@ -269,8 +270,11 @@ export class DatabaseStorage implements IStorage {
 
   // Stats
   async getStats(): Promise<any> {
-    const allOrders = await db.select().from(orders);
+    const allOrdersRaw = await db.select().from(orders);
     const allChats = await db.select().from(chats);
+    
+    // Only count approved orders (those with payment verified) in all stats
+    const allOrders = allOrdersRaw.filter(o => o.advancePaymentStatus === 'approved');
     
     const today = new Date();
     today.setHours(0, 0, 0, 0);
