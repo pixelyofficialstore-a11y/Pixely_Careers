@@ -1,8 +1,9 @@
 import { 
-  users, orders, chats, messages, notifications, orderServices, messageShortcuts, paymentVerifications, activityLogs,
+  users, orders, chats, messages, notifications, orderServices, messageShortcuts, paymentVerifications, activityLogs, catalogs,
   type User, type InsertUser, type Order, type InsertOrder, type Chat, type InsertChat, type Message, type Notification,
   type OrderService, type InsertOrderService, type OrderWithServices, type MessageShortcut, 
-  type PaymentVerification, type InsertPaymentVerification, type PaymentVerificationWithUsers
+  type PaymentVerification, type InsertPaymentVerification, type PaymentVerificationWithUsers,
+  type Catalog, type InsertCatalog
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, sql, and, isNotNull } from "drizzle-orm";
@@ -260,6 +261,31 @@ export class DatabaseStorage implements IStorage {
 
   async deleteShortcut(id: number): Promise<void> {
     await db.delete(messageShortcuts).where(eq(messageShortcuts.id, id));
+  }
+
+  // Catalogs
+  async getCatalogs(): Promise<Catalog[]> {
+    return await db.select().from(catalogs).orderBy(catalogs.sortOrder);
+  }
+
+  async getActiveCatalogs(): Promise<Catalog[]> {
+    return await db.select().from(catalogs)
+      .where(eq(catalogs.isActive, true))
+      .orderBy(catalogs.sortOrder);
+  }
+
+  async createCatalog(data: InsertCatalog): Promise<Catalog> {
+    const [catalog] = await db.insert(catalogs).values(data).returning();
+    return catalog;
+  }
+
+  async updateCatalog(id: number, updates: Partial<InsertCatalog>): Promise<Catalog> {
+    const [catalog] = await db.update(catalogs).set(updates).where(eq(catalogs.id, id)).returning();
+    return catalog;
+  }
+
+  async deleteCatalog(id: number): Promise<void> {
+    await db.delete(catalogs).where(eq(catalogs.id, id));
   }
 
   async getChatMessages(chatId: number): Promise<Message[]> {

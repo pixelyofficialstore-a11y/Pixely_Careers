@@ -150,6 +150,19 @@ export const messageShortcuts = pgTable("message_shortcuts", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Catalogs - product/service catalog items for WhatsApp Business
+export const catalogs = pgTable("catalogs", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  price: integer("price").notNull(), // In PKR
+  imageUrl: text("image_url"), // URL to product image
+  isActive: boolean("is_active").default(true),
+  sortOrder: integer("sort_order").default(0),
+  createdById: integer("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Monthly Finance Summary - aggregated finance data per month (Admin only)
 export const monthlyFinance = pgTable("monthly_finance", {
   id: serial("id").primaryKey(),
@@ -247,6 +260,7 @@ export const insertMessageSchema = createInsertSchema(messages).omit({ id: true,
 export const insertActivityLogSchema = createInsertSchema(activityLogs).omit({ id: true, createdAt: true });
 export const insertPaymentVerificationSchema = createInsertSchema(paymentVerifications).omit({ id: true, createdAt: true });
 export const insertMessageShortcutSchema = createInsertSchema(messageShortcuts).omit({ id: true, createdAt: true });
+export const insertCatalogSchema = createInsertSchema(catalogs).omit({ id: true, createdAt: true });
 
 // === TYPES ===
 export type User = typeof users.$inferSelect;
@@ -266,6 +280,8 @@ export type PaymentVerification = typeof paymentVerifications.$inferSelect;
 export type InsertPaymentVerification = z.infer<typeof insertPaymentVerificationSchema>;
 export type MessageShortcut = typeof messageShortcuts.$inferSelect;
 export type InsertMessageShortcut = z.infer<typeof insertMessageShortcutSchema>;
+export type Catalog = typeof catalogs.$inferSelect;
+export type InsertCatalog = z.infer<typeof insertCatalogSchema>;
 export type MonthlyFinance = typeof monthlyFinance.$inferSelect;
 export type UserRole = (typeof userRoles)[number];
 

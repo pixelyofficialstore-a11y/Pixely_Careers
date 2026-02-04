@@ -462,6 +462,48 @@ export async function registerRoutes(
     res.sendStatus(204);
   });
 
+  // Catalogs
+  app.get("/api/catalogs", requireAuth, async (req, res) => {
+    const user = req.user as User;
+    // Admin sees all catalogs, others see only active
+    const catalogList = user.role === "admin" 
+      ? await storage.getCatalogs()
+      : await storage.getActiveCatalogs();
+    res.json(catalogList);
+  });
+
+  app.post("/api/catalogs", requireRole(["admin"]), async (req, res) => {
+    const user = req.user as User;
+    const { name, description, price, imageUrl, isActive, sortOrder } = req.body;
+    if (!name || price === undefined) return res.status(400).json({ error: "Name and price required" });
+    
+    const catalog = await storage.createCatalog({ 
+      name, 
+      description, 
+      price: Number(price), 
+      imageUrl, 
+      isActive: isActive !== false, 
+      sortOrder: sortOrder || 0,
+      createdById: user.id 
+    });
+    res.status(201).json(catalog);
+  });
+
+  app.patch("/api/catalogs/:id", requireRole(["admin"]), async (req, res) => {
+    const id = Number(req.params.id);
+    const updates = req.body;
+    if (updates.price !== undefined) updates.price = Number(updates.price);
+    
+    const catalog = await storage.updateCatalog(id, updates);
+    res.json(catalog);
+  });
+
+  app.delete("/api/catalogs/:id", requireRole(["admin"]), async (req, res) => {
+    const id = Number(req.params.id);
+    await storage.deleteCatalog(id);
+    res.sendStatus(204);
+  });
+
   // Configure multer for file uploads
   const uploadsDir = path.join(process.cwd(), 'uploads');
   if (!fs.existsSync(uploadsDir)) {
