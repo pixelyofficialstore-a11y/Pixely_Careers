@@ -52,7 +52,7 @@ import {
 import { format } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { Chat, Message, User, MessageShortcut, Order } from "@shared/schema";
+import type { Chat, Message, User, MessageShortcut, Order, Catalog } from "@shared/schema";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
@@ -94,7 +94,11 @@ export default function WhatsAppPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [showOrderPanel, setShowOrderPanel] = useState(false);
   const [showLinkOrderDialog, setShowLinkOrderDialog] = useState(false);
-  const [activeTab, setActiveTab] = useState<"all" | "unread" | "favourites" | "assigned">("all");
+  const [activeTab, setActiveTab] = useState<"all" | "new" | "assigned">("all");
+  const [designerFilter, setDesignerFilter] = useState<number | null>(null);
+  const [showCreateChatDialog, setShowCreateChatDialog] = useState(false);
+  const [newChatName, setNewChatName] = useState("");
+  const [newChatPhone, setNewChatPhone] = useState("");
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -133,12 +137,28 @@ export default function WhatsAppPage() {
     queryKey: ["/api/shortcuts"],
   });
 
+  const { data: catalogItems } = useQuery<Catalog[]>({
+    queryKey: ["/api/catalogs"],
+  });
+
   const { data: orders } = useQuery<Order[]>({
     queryKey: ["/api/orders"],
   });
 
   const linkedOrder = orders?.find(o => o.id === selectedChat?.linkedOrderId);
   const designers = teamMembers?.filter(u => u.role === "designer") || [];
+
+  const createChatMutation = useMutation({
+    mutationFn: (data: { clientName: string; clientPhone?: string }) =>
+      apiRequest("POST", "/api/chats", data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
+      toast({ title: "Success", description: "Chat created" });
+      setShowCreateChatDialog(false);
+      setNewChatName("");
+      setNewChatPhone("");
+    },
+  });
 
   const sendMessageMutation = useMutation({
     mutationFn: async ({ chatId, content, file }: { chatId: number; content: string; file?: File }) => {
@@ -368,9 +388,11 @@ export default function WhatsAppPage() {
     if (filterTag && !(chat.tags as string[] || []).includes(filterTag)) return false;
     
     // Tab filtering
-    if (activeTab === "unread" && (chat.unreadCount || 0) === 0) return false;
-    if (activeTab === "favourites" && !(chat.tags as string[] || []).includes("Satisfied Client")) return false;
-    if (activeTab === "assigned" && !chat.assignedToId) return false;
+    if (activeTab === "new" && !(chat.tags as string[] || []).includes("New")) return false;
+    if (activeTab === "assigned") {
+      if (!chat.assignedToId) return false;
+      if (designerFilter && chat.assignedToId !== designerFilter) return false;
+    }
     
     if (search) {
       const name = getDisplayName(chat).toLowerCase();
@@ -440,10 +462,10 @@ export default function WhatsAppPage() {
           </div>
         </div>
 
-        {/* Search */}
-        <div className="px-3 py-2" style={{ backgroundColor: "#111b21" }}>
+        {/* Search and Create */}
+        <div className="px-3 py-2 flex gap-2" style={{ backgroundColor: "#111b21" }}>
           <div 
-            className="flex items-center gap-4 px-3 py-2 rounded-lg"
+            className="flex-1 flex items-center gap-4 px-3 py-2 rounded-lg"
             style={{ backgroundColor: "#202c33" }}
           >
             <Search className="w-4 h-4 text-slate-500" />
@@ -456,6 +478,16 @@ export default function WhatsAppPage() {
               data-testid="input-search-chats"
             />
           </div>
+          {(isAdmin || isSupport) && (
+            <Button
+              size="icon"
+              onClick={() => setShowCreateChatDialog(true)}
+              className="bg-[#00a884] hover:bg-[#00a884]/90 text-white"
+              data-testid="button-create-chat"
+            >
+              <Plus className="w-5 h-5" />
+            </Button>
+          )}
         </div>
 
         {/* Tab Filters */}
@@ -477,36 +509,27 @@ export default function WhatsAppPage() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => setActiveTab("unread")}
+            onClick={() => setActiveTab("new")}
             className={cn(
               "rounded-full text-xs px-4",
-              activeTab === "unread" 
+              activeTab === "new" 
                 ? "bg-[#00a884] text-white hover:bg-[#00a884]" 
                 : "bg-[#202c33] text-slate-300 hover:bg-[#2a3942]"
             )}
-            data-testid="tab-unread"
+            data-testid="tab-new"
           >
-            Unread
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setActiveTab("favourites")}
-            className={cn(
-              "rounded-full text-xs px-4",
-              activeTab === "favourites" 
-                ? "bg-[#00a884] text-white hover:bg-[#00a884]" 
-                : "bg-[#202c33] text-slate-300 hover:bg-[#2a3942]"
-            )}
-            data-testid="tab-favourites"
-          >
-            Favourites
+            New
           </Button>
           {(isAdmin || isSupport) && (
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setActiveTab("assigned")}
+              onClick={() => {
+                setActiveTab("assigned");
+                if (!designerFilter && designers.length > 0) {
+                  setDesignerFilter(designers[0].id);
+                }
+              }}
               className={cn(
                 "rounded-full text-xs px-4",
                 activeTab === "assigned" 
@@ -517,6 +540,28 @@ export default function WhatsAppPage() {
             >
               By Designer
             </Button>
+          )}
+          {activeTab === "assigned" && (isAdmin || isSupport) && (
+            <Select
+              value={designerFilter?.toString() || ""}
+              onValueChange={(val) => setDesignerFilter(val ? Number(val) : null)}
+            >
+              <SelectTrigger 
+                className="w-36 h-8 text-xs border-none"
+                style={{ backgroundColor: "#202c33" }}
+                data-testid="select-designer-filter"
+              >
+                <SelectValue placeholder="All Designers" />
+              </SelectTrigger>
+              <SelectContent style={{ backgroundColor: "#202c33" }}>
+                <SelectItem value="">All Designers</SelectItem>
+                {designers.map(d => (
+                  <SelectItem key={d.id} value={d.id.toString()}>
+                    {d.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -1147,43 +1192,119 @@ export default function WhatsAppPage() {
       {/* Catalog Dialog */}
       <Dialog open={showCatalogDialog} onOpenChange={setShowCatalogDialog}>
         <DialogContent 
-          className="border max-w-md"
+          className="border max-w-lg max-h-[80vh] overflow-hidden flex flex-col"
           style={{ backgroundColor: "#233138", borderColor: "#2a3942" }}
         >
           <DialogHeader>
             <DialogTitle className="text-slate-100">Send Catalog</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
-            {[
-              { id: 1, name: "ATS CV Service", price: "5,000", description: "Professional ATS-optimized CV" },
-              { id: 2, name: "LinkedIn Profile Optimization", price: "3,000", description: "Complete LinkedIn profile makeover" },
-              { id: 3, name: "Cover Letter", price: "2,000", description: "Customized cover letter writing" },
-              { id: 4, name: "Complete Package", price: "8,000", description: "CV + LinkedIn + Cover Letter" },
-              { id: 5, name: "Europass CV", price: "4,000", description: "European-style CV format" },
-            ].map(item => (
-              <button
-                key={item.id}
-                className="w-full p-3 rounded-lg text-left hover:bg-white/5 transition-colors flex items-center justify-between"
-                style={{ backgroundColor: "#2a3942" }}
-                onClick={() => {
-                  if (selectedChat) {
-                    const catalogMessage = `*${item.name}*\n${item.description}\n\nPrice: PKR ${item.price}`;
-                    sendMessageMutation.mutate({ 
-                      chatId: selectedChat.id, 
-                      content: catalogMessage 
-                    });
-                    setShowCatalogDialog(false);
-                  }
-                }}
-                data-testid={`catalog-item-${item.id}`}
-              >
-                <div>
-                  <div className="font-medium text-slate-100">{item.name}</div>
-                  <div className="text-sm text-slate-400">{item.description}</div>
+          <ScrollArea className="flex-1 pr-4">
+            <div className="space-y-3">
+              {catalogItems && catalogItems.length > 0 ? catalogItems.map(item => (
+                <button
+                  key={item.id}
+                  className="w-full p-3 rounded-lg text-left hover:bg-white/5 transition-colors flex items-start gap-3"
+                  style={{ backgroundColor: "#2a3942" }}
+                  onClick={() => {
+                    if (selectedChat) {
+                      const catalogMessage = `*${item.name}*\n${item.description || ''}\n\nPrice: PKR ${item.price.toLocaleString()}`;
+                      sendMessageMutation.mutate({ 
+                        chatId: selectedChat.id, 
+                        content: catalogMessage 
+                      });
+                      setShowCatalogDialog(false);
+                    }
+                  }}
+                  data-testid={`catalog-item-${item.id}`}
+                >
+                  {item.imageUrl ? (
+                    <img 
+                      src={item.imageUrl} 
+                      alt={item.name}
+                      className="w-16 h-16 object-cover rounded-md flex-shrink-0"
+                    />
+                  ) : (
+                    <div 
+                      className="w-16 h-16 rounded-md flex items-center justify-center flex-shrink-0"
+                      style={{ backgroundColor: "#1a252d" }}
+                    >
+                      <Package className="w-6 h-6 text-slate-500" />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-slate-100">{item.name}</div>
+                    <div className="text-sm text-slate-400 truncate">{item.description || ''}</div>
+                    <div className="text-[#00a884] font-medium mt-1">PKR {item.price.toLocaleString()}</div>
+                  </div>
+                </button>
+              )) : (
+                <div className="text-center py-8 text-slate-400">
+                  <Package className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p>No catalog items available</p>
+                  <p className="text-sm mt-1">Ask admin to add items in Catalog settings</p>
                 </div>
-                <div className="text-[#00a884] font-medium">PKR {item.price}</div>
-              </button>
-            ))}
+              )}
+            </div>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Chat Dialog */}
+      <Dialog open={showCreateChatDialog} onOpenChange={setShowCreateChatDialog}>
+        <DialogContent 
+          className="border max-w-md"
+          style={{ backgroundColor: "#233138", borderColor: "#2a3942" }}
+        >
+          <DialogHeader>
+            <DialogTitle className="text-slate-100">Create New Chat</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm text-slate-300">Client Name *</label>
+              <Input
+                value={newChatName}
+                onChange={(e) => setNewChatName(e.target.value)}
+                placeholder="Enter client name"
+                className="border-slate-600 bg-[#2a3942] text-slate-100"
+                data-testid="input-new-chat-name"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm text-slate-300">Phone Number</label>
+              <Input
+                value={newChatPhone}
+                onChange={(e) => setNewChatPhone(e.target.value)}
+                placeholder="+92 300 1234567"
+                className="border-slate-600 bg-[#2a3942] text-slate-100"
+                data-testid="input-new-chat-phone"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => setShowCreateChatDialog(false)}
+                className="border-slate-600 text-slate-300 hover:bg-[#2a3942]"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  if (!newChatName.trim()) {
+                    toast({ title: "Error", description: "Client name is required", variant: "destructive" });
+                    return;
+                  }
+                  createChatMutation.mutate({
+                    clientName: newChatName.trim(),
+                    clientPhone: newChatPhone.trim() || undefined,
+                  });
+                }}
+                disabled={createChatMutation.isPending}
+                className="bg-[#00a884] hover:bg-[#00a884]/90 text-white"
+                data-testid="button-submit-create-chat"
+              >
+                Create Chat
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
