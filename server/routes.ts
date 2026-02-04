@@ -504,6 +504,58 @@ export async function registerRoutes(
     res.sendStatus(204);
   });
 
+  // Configure multer for catalog image uploads
+  const catalogUploadsDir = path.join(process.cwd(), 'uploads', 'catalogs');
+  if (!fs.existsSync(catalogUploadsDir)) {
+    fs.mkdirSync(catalogUploadsDir, { recursive: true });
+  }
+
+  const catalogImageStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+      cb(null, catalogUploadsDir);
+    },
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      const filename = `catalog-${Date.now()}${ext}`;
+      cb(null, filename);
+    },
+  });
+
+  const catalogUpload = multer({
+    storage: catalogImageStorage,
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+    fileFilter: (req, file, cb) => {
+      const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+      if (allowedTypes.includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        cb(new Error('Only image files are allowed'));
+      }
+    },
+  });
+
+  app.post("/api/catalogs/upload-image", requireRole(["admin"]), catalogUpload.single('image'), (req: Request, res: Response) => {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: "No image file provided" });
+    }
+    
+    const imageUrl = `/api/catalog-images/${file.filename}`;
+    res.json({ imageUrl });
+  });
+
+  // Serve catalog images
+  app.get("/api/catalog-images/:filename", (req, res) => {
+    const filename = req.params.filename;
+    const filepath = path.join(catalogUploadsDir, filename);
+    
+    if (!fs.existsSync(filepath)) {
+      return res.sendStatus(404);
+    }
+    
+    res.sendFile(filepath);
+  });
+
   // Configure multer for file uploads
   const uploadsDir = path.join(process.cwd(), 'uploads');
   if (!fs.existsSync(uploadsDir)) {
@@ -544,7 +596,7 @@ export async function registerRoutes(
   };
 
   // File upload for messages
-  app.post("/api/chats/:id/messages/upload", requireAuth, upload.single('file'), handleMulterError, async (req: express.Request, res: express.Response) => {
+  app.post("/api/chats/:id/messages/upload", requireAuth, upload.single('file'), handleMulterError, async (req: Request, res: Response) => {
     const chatId = Number(req.params.id);
     const user = req.user as User;
     

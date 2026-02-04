@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import chatBgPattern from "@assets/8c98994518b575bfd8c949e91d20548b_1770211798127.jpg";
+import chatBgPattern from "@assets/d36bcceceaa1d390489ec70d93154311_1770214551405.jpg";
 import { useQuery, useMutation, keepPreviousData } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { Input } from "@/components/ui/input";
@@ -672,18 +672,18 @@ export default function WhatsAppPage() {
                         {chat.lastMessageAt ? format(new Date(chat.lastMessageAt), "HH:mm") : ""}
                       </span>
                     </div>
-                    <div className="flex items-center justify-between gap-2 mt-0.5">
-                      <div className="flex items-center gap-1 min-w-0 flex-1">
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <div className="flex items-center gap-1 min-w-0 flex-1 overflow-hidden">
                         <CheckCheck className="w-4 h-4 text-blue-400 flex-shrink-0" />
-                        <span className="text-sm text-slate-400 truncate">
+                        <span className="text-sm text-slate-400 truncate block max-w-full">
                           {chat.lastMessage || "No messages"}
                         </span>
                       </div>
-                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <div className="flex items-center gap-1.5 flex-shrink-0 ml-auto">
                         {primaryTag && (
                           <span 
                             className={cn(
-                              "text-[10px] px-1.5 py-0.5 rounded font-medium",
+                              "text-[10px] px-1.5 py-0.5 rounded font-medium whitespace-nowrap",
                               TAG_COLORS[primaryTag]?.bg,
                               TAG_COLORS[primaryTag]?.text
                             )}

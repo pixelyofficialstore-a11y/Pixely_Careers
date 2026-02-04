@@ -23,7 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Pencil, Trash2, ShoppingBag, Image } from "lucide-react";
+import { Plus, Pencil, Trash2, ShoppingBag, Image, Upload } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Catalog } from "@shared/schema";
@@ -37,8 +37,11 @@ export default function CatalogsPage() {
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
   const [imageUrl, setImageUrl] = useState("");
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string>("");
   const [isActive, setIsActive] = useState(true);
   const [sortOrder, setSortOrder] = useState("0");
+  const [isUploading, setIsUploading] = useState(false);
 
   const isAdmin = user?.role === "admin";
 
@@ -80,6 +83,8 @@ export default function CatalogsPage() {
     setDescription("");
     setPrice("");
     setImageUrl("");
+    setImageFile(null);
+    setImagePreview("");
     setIsActive(true);
     setSortOrder("0");
     setIsDialogOpen(true);
@@ -91,6 +96,8 @@ export default function CatalogsPage() {
     setDescription(catalog.description || "");
     setPrice(catalog.price.toString());
     setImageUrl(catalog.imageUrl || "");
+    setImageFile(null);
+    setImagePreview(catalog.imageUrl || "");
     setIsActive(catalog.isActive ?? true);
     setSortOrder((catalog.sortOrder || 0).toString());
     setIsDialogOpen(true);
@@ -103,11 +110,25 @@ export default function CatalogsPage() {
     setDescription("");
     setPrice("");
     setImageUrl("");
+    setImageFile(null);
+    setImagePreview("");
     setIsActive(true);
     setSortOrder("0");
   };
 
-  const handleSubmit = () => {
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setImageFile(file);
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setImagePreview(e.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSubmit = async () => {
     if (!name.trim() || !price.trim()) {
       toast({ title: "Error", description: "Name and price are required", variant: "destructive" });
       return;
@@ -119,11 +140,39 @@ export default function CatalogsPage() {
       return;
     }
 
+    let finalImageUrl = imageUrl.trim();
+    
+    if (imageFile) {
+      setIsUploading(true);
+      try {
+        const formData = new FormData();
+        formData.append("image", imageFile);
+        
+        const response = await fetch("/api/catalogs/upload-image", {
+          method: "POST",
+          body: formData,
+          credentials: "include",
+        });
+        
+        if (!response.ok) {
+          throw new Error("Failed to upload image");
+        }
+        
+        const result = await response.json();
+        finalImageUrl = result.imageUrl;
+      } catch (error) {
+        toast({ title: "Error", description: "Failed to upload image", variant: "destructive" });
+        setIsUploading(false);
+        return;
+      }
+      setIsUploading(false);
+    }
+
     const data = { 
       name: name.trim(), 
       description: description.trim(), 
       price: priceNum, 
-      imageUrl: imageUrl.trim(),
+      imageUrl: finalImageUrl,
       isActive,
       sortOrder: parseInt(sortOrder, 10) || 0
     };
@@ -298,21 +347,58 @@ export default function CatalogsPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="imageUrl">Image URL</Label>
-              <Input
-                id="imageUrl"
-                value={imageUrl}
-                onChange={(e) => setImageUrl(e.target.value)}
-                placeholder="https://example.com/image.jpg"
-                data-testid="input-catalog-image"
-              />
-              {imageUrl && (
-                <img 
-                  src={imageUrl} 
-                  alt="Preview" 
-                  className="w-20 h-20 object-cover rounded-md mt-2"
+              <Label>Product Image</Label>
+              <div className="flex items-center gap-4">
+                <div 
+                  className="w-20 h-20 border-2 border-dashed border-slate-600 rounded-md flex items-center justify-center overflow-hidden cursor-pointer hover:border-slate-500 transition-colors"
+                  onClick={() => document.getElementById("imageUpload")?.click()}
+                >
+                  {imagePreview ? (
+                    <img 
+                      src={imagePreview} 
+                      alt="Preview" 
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <Upload className="w-6 h-6 text-slate-500" />
+                  )}
+                </div>
+                <input
+                  id="imageUpload"
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleImageSelect}
+                  data-testid="input-catalog-image"
                 />
-              )}
+                <div className="flex-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => document.getElementById("imageUpload")?.click()}
+                    data-testid="button-upload-image"
+                  >
+                    <Upload className="w-4 h-4 mr-2" />
+                    {imagePreview ? "Change Image" : "Upload Image"}
+                  </Button>
+                  {imagePreview && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="ml-2 text-red-400"
+                      onClick={() => {
+                        setImageFile(null);
+                        setImagePreview("");
+                        setImageUrl("");
+                      }}
+                    >
+                      Remove
+                    </Button>
+                  )}
+                </div>
+              </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="sortOrder">Sort Order</Label>
@@ -341,10 +427,10 @@ export default function CatalogsPage() {
             </Button>
             <Button 
               onClick={handleSubmit}
-              disabled={createMutation.isPending || updateMutation.isPending}
+              disabled={createMutation.isPending || updateMutation.isPending || isUploading}
               data-testid="button-save-catalog"
             >
-              {editingCatalog ? "Update" : "Create"}
+              {isUploading ? "Uploading..." : editingCatalog ? "Update" : "Create"}
             </Button>
           </DialogFooter>
         </DialogContent>
