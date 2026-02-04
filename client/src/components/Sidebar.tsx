@@ -10,7 +10,8 @@ import {
   LogOut,
   Settings,
   CreditCard,
-  Camera
+  Camera,
+  ShoppingBag
 } from "lucide-react";
 import { SiWhatsapp } from "react-icons/si";
 import { cn } from "@/lib/utils";
@@ -86,6 +87,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
     { href: "/users", label: "Team", icon: Users, roles: ["admin"] },
     { href: "/stats", label: "Analytics", icon: BarChart3, roles: ["admin"] },
     { href: "/shortcuts", label: "Shortcuts", icon: Settings, roles: ["admin"] },
+    { href: "/catalogs", label: "Catalogs", icon: ShoppingBag, roles: ["admin"] },
   ];
 
   const allowedLinks = links.filter(link => link.roles.includes(user.role));

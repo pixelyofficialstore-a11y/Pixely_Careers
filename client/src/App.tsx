@@ -16,6 +16,7 @@ import AnalyticsPage from "@/pages/AnalyticsPage";
 import WhatsAppPage from "@/pages/WhatsAppPage";
 import ShortcutsPage from "@/pages/ShortcutsPage";
 import PaymentsPage from "@/pages/PaymentsPage";
+import CatalogsPage from "@/pages/CatalogsPage";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -87,6 +88,13 @@ function Router() {
         <ProtectedRoute>
           <Layout>
             <ShortcutsPage />
+          </Layout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/catalogs">
+        <ProtectedRoute>
+          <Layout>
+            <CatalogsPage />
           </Layout>
         </ProtectedRoute>
       </Route>
