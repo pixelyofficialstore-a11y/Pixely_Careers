@@ -108,12 +108,16 @@ All monetary values displayed in PKR (₨), stored as integers (cents) in the da
 
 ### WhatsApp Module (February 2026)
 - Renamed "Chats" section to "WhatsApp" with WhatsApp icon in sidebar
-- Route changed from /chats to /whatsapp; opens in new tab when clicked
+- Route changed from /chats to /whatsapp; opens in same window (not new tab)
 - Exact WhatsApp Web UI design with dark theme (#0b141a, #111b21, #202c33, #00a884 green accents)
+- Custom chat background using decorative pattern image
 - Full chat UI with chat list sidebar and messaging interface
-- Tab navigation: All Chats, New (with unread count), By Designer grouping
+- Tab navigation: All Chats, Unread (with unread count), Favourites (Satisfied Client tag), By Designer grouping
 - Search functionality to filter by client name or phone number
 - Message shortcuts system with 6 default templates (type "/" to access)
+- Voice message recording: mic button starts recording with visual timer, stop/cancel options, sends as audio file
+- Emoji picker: grid-based picker with 5 categories (smileys, gestures, hearts, objects, nature), 150+ emojis
+- Catalog feature: dialog with 5 predefined services (ATS CV, LinkedIn, Cover Letter, Complete Package, Europass CV) - sends formatted message with pricing
 - Updated tag system: New, Working, Pending, Changes, Issues, Satisfied Client
 - Auto-unassign logic: When designer sets "Satisfied Client" tag, chat is automatically unassigned
 - Role-based visibility: Admin/Support see all chats, Designer sees only assigned
