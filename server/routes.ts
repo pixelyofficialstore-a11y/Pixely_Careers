@@ -927,7 +927,7 @@ export async function registerRoutes(
     fileFilter: (req, file, cb) => {
       const allowedTypes = [
         'image/jpeg', 'image/png', 'image/gif', 'image/webp',
-        'audio/ogg', 'audio/mpeg', 'audio/mp4', 'audio/amr', 'audio/aac',
+        'audio/ogg', 'audio/mpeg', 'audio/mp4', 'audio/amr', 'audio/aac', 'audio/webm',
         'video/mp4', 'video/3gpp',
         'application/pdf', 'application/msword',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -1324,6 +1324,49 @@ export async function registerRoutes(
     
     const updated = await storage.updateChat(chatId, updates);
     res.json(updated);
+  });
+
+  // Delete a message (admin/support only)
+  app.delete("/api/messages/:id", requireRole(["admin", "support"]), async (req, res) => {
+    const messageId = Number(req.params.id);
+    await storage.deleteMessage(messageId);
+    res.sendStatus(204);
+  });
+
+  // Delete a chat (admin only)
+  app.delete("/api/chats/:id", requireRole(["admin"]), async (req, res) => {
+    const chatId = Number(req.params.id);
+    const chat = await storage.getChat(chatId);
+    if (!chat) return res.sendStatus(404);
+    
+    await storage.deleteChat(chatId);
+    res.sendStatus(204);
+  });
+
+  // Create a new chat
+  app.post("/api/chats", requireRole(["admin", "support"]), async (req, res) => {
+    const { clientName, clientPhone } = req.body;
+    if (!clientName) {
+      return res.status(400).json({ error: "Client name is required" });
+    }
+    
+    // Format phone number if provided
+    let formattedPhone = clientPhone;
+    if (clientPhone) {
+      formattedPhone = formatPhoneForWhatsApp(clientPhone);
+      // Add + prefix for display
+      if (!formattedPhone.startsWith("+")) {
+        formattedPhone = "+" + formattedPhone;
+      }
+    }
+    
+    const chat = await storage.createChat({
+      clientName: clientName.trim(),
+      clientPhone: formattedPhone || undefined,
+      tags: ["New"],
+    });
+    
+    res.status(201).json(chat);
   });
 
   // === PAYMENT VERIFICATIONS ===

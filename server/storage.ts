@@ -46,6 +46,10 @@ export interface IStorage {
   updateShortcut(id: number, updates: Partial<{ command: string; content: string; isActive: boolean }>): Promise<MessageShortcut | undefined>;
   deleteShortcut(id: number): Promise<void>;
   getChatMessages(chatId: number): Promise<Message[]>;
+  
+  // Delete operations
+  deleteMessage(id: number): Promise<void>;
+  deleteChat(id: number): Promise<void>;
 
   // Stats
   getStats(): Promise<any>;
@@ -391,6 +395,18 @@ export class DatabaseStorage implements IStorage {
   async updatePaymentVerification(id: number, updates: Partial<InsertPaymentVerification>): Promise<PaymentVerification> {
     const [verification] = await db.update(paymentVerifications).set(updates).where(eq(paymentVerifications.id, id)).returning();
     return verification;
+  }
+
+  // Delete operations
+  async deleteMessage(id: number): Promise<void> {
+    await db.delete(messages).where(eq(messages.id, id));
+  }
+
+  async deleteChat(id: number): Promise<void> {
+    // First delete all messages in the chat
+    await db.delete(messages).where(eq(messages.chatId, id));
+    // Then delete the chat
+    await db.delete(chats).where(eq(chats.id, id));
   }
 }
 

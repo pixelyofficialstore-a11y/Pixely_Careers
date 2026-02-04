@@ -105,6 +105,9 @@ export default function WhatsAppPage() {
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [showCatalogDialog, setShowCatalogDialog] = useState(false);
   const [playingAudioId, setPlayingAudioId] = useState<number | null>(null);
+  const [showRenameDialog, setShowRenameDialog] = useState(false);
+  const [renameChatName, setRenameChatName] = useState("");
+  const [showDeleteChatConfirm, setShowDeleteChatConfirm] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -151,12 +154,65 @@ export default function WhatsAppPage() {
   const createChatMutation = useMutation({
     mutationFn: (data: { clientName: string; clientPhone?: string }) =>
       apiRequest("POST", "/api/chats", data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
+    onSuccess: async (response) => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
+      const newChat = await response.json();
+      setSelectedChat(newChat);
       toast({ title: "Success", description: "Chat created" });
       setShowCreateChatDialog(false);
       setNewChatName("");
       setNewChatPhone("");
+    },
+  });
+
+  const deleteMessageMutation = useMutation({
+    mutationFn: (messageId: number) =>
+      apiRequest("DELETE", `/api/messages/${messageId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chats", selectedChat?.id, "messages"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
+      toast({ title: "Deleted", description: "Message deleted" });
+    },
+  });
+
+  const deleteChatMutation = useMutation({
+    mutationFn: (chatId: number) =>
+      apiRequest("DELETE", `/api/chats/${chatId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
+      setSelectedChat(null);
+      toast({ title: "Deleted", description: "Chat deleted" });
+    },
+  });
+
+  const sendVoiceWhatsAppMutation = useMutation({
+    mutationFn: async ({ chatId, audioBlob }: { chatId: number; audioBlob: Blob }) => {
+      const formData = new FormData();
+      // MediaRecorder creates webm with opus codec - WhatsApp accepts audio/webm
+      const extension = audioBlob.type.includes("webm") ? "webm" : "ogg";
+      formData.append("media", audioBlob, `voice_message.${extension}`);
+      formData.append("mediaType", "audio");
+      return fetch(`/api/chats/${chatId}/send-whatsapp-media`, {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      }).then(res => {
+        if (!res.ok) throw new Error("Failed to send voice message");
+        return res.json();
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chats", selectedChat?.id, "messages"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
+      setAudioBlob(null);
+      setRecordingTime(0);
+    },
+    onError: (error: Error) => {
+      toast({ 
+        title: "Failed to send voice message", 
+        description: error.message,
+        variant: "destructive"
+      });
     },
   });
 
@@ -288,15 +344,25 @@ export default function WhatsAppPage() {
 
   const sendVoiceMessage = useCallback(() => {
     if (!audioBlob || !selectedChat) return;
-    const voiceFile = new (window as any).File([audioBlob], "voice_message.webm", { type: "audio/webm" }) as File;
-    sendMessageMutation.mutate({ 
-      chatId: selectedChat.id, 
-      content: "Voice message",
-      file: voiceFile 
-    });
-    setAudioBlob(null);
-    setRecordingTime(0);
-  }, [audioBlob, selectedChat, sendMessageMutation]);
+    
+    // Use WhatsApp API if chat has phone number
+    if (selectedChat.clientPhone) {
+      sendVoiceWhatsAppMutation.mutate({
+        chatId: selectedChat.id,
+        audioBlob: audioBlob,
+      });
+    } else {
+      // Fallback to regular file upload for internal chats
+      const voiceFile = new (window as any).File([audioBlob], "voice_message.webm", { type: "audio/webm" }) as File;
+      sendMessageMutation.mutate({ 
+        chatId: selectedChat.id, 
+        content: "Voice message",
+        file: voiceFile 
+      });
+      setAudioBlob(null);
+      setRecordingTime(0);
+    }
+  }, [audioBlob, selectedChat, sendMessageMutation, sendVoiceWhatsAppMutation]);
 
   const formatRecordingTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -689,9 +755,21 @@ export default function WhatsAppPage() {
                     <div className="flex items-center gap-2 mt-0.5">
                       <div className="flex items-center gap-1 min-w-0 flex-1 overflow-hidden">
                         <CheckCheck className="w-4 h-4 text-blue-400 flex-shrink-0" />
-                        <span className="text-sm text-slate-400 truncate block max-w-full">
-                          {chat.lastMessage || "No messages"}
-                        </span>
+                        {chat.lastMessage?.includes(".pdf") || chat.lastMessage?.includes(".doc") ? (
+                          <div className="flex items-center gap-1 text-sm text-slate-400 truncate">
+                            <File className="w-3 h-3 flex-shrink-0" />
+                            <span className="truncate">{chat.lastMessage}</span>
+                          </div>
+                        ) : (
+                          <span className="text-sm text-slate-400 truncate block max-w-full" style={{ 
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            maxWidth: "180px"
+                          }}>
+                            {chat.lastMessage || "No messages"}
+                          </span>
+                        )}
                       </div>
                       <div className="flex items-center gap-1.5 flex-shrink-0 ml-auto">
                         {primaryTag && (
@@ -842,6 +920,32 @@ export default function WhatsAppPage() {
                         Link to order
                       </DropdownMenuItem>
                     ) : null}
+                    
+                    {(isAdmin || isSupport) && (
+                      <>
+                        <DropdownMenuSeparator style={{ backgroundColor: "#2a3942" }} />
+                        <DropdownMenuItem 
+                          className="text-slate-200 hover:bg-white/5 cursor-pointer"
+                          onClick={() => {
+                            setRenameChatName(selectedChat?.clientName || "");
+                            setShowRenameDialog(true);
+                          }}
+                          data-testid="menu-rename-chat"
+                        >
+                          Rename chat
+                        </DropdownMenuItem>
+                      </>
+                    )}
+                    
+                    {isAdmin && (
+                      <DropdownMenuItem 
+                        className="text-red-400 hover:bg-white/5 cursor-pointer"
+                        onClick={() => setShowDeleteChatConfirm(true)}
+                        data-testid="menu-delete-chat"
+                      >
+                        Delete chat
+                      </DropdownMenuItem>
+                    )}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
@@ -858,8 +962,37 @@ export default function WhatsAppPage() {
               }}
             >
               <div className="space-y-2 max-w-3xl mx-auto">
+                {/* Encryption Notice */}
+                <div className="flex justify-center mb-4">
+                  <div 
+                    className="px-3 py-1.5 rounded-lg text-xs flex items-center gap-2"
+                    style={{ backgroundColor: "#182229" }}
+                  >
+                    <svg viewBox="0 0 24 24" className="w-3 h-3 text-yellow-500 fill-current">
+                      <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 6c1.4 0 2.8 1.1 2.8 2.5V11c.6 0 1.2.6 1.2 1.3v3.5c0 .6-.6 1.2-1.2 1.2H9.2c-.6 0-1.2-.6-1.2-1.3v-3.5c0-.6.6-1.2 1.2-1.2V9.5C9.2 8.1 10.6 7 12 7zm0 1.2c-.8 0-1.5.5-1.5 1.3V11h3V9.5c0-.8-.7-1.3-1.5-1.3z"/>
+                    </svg>
+                    <span style={{ color: "#8696a0" }}>
+                      Messages are end-to-end encrypted. No one outside of this chat, not even WhatsApp, can read or listen to them.
+                    </span>
+                  </div>
+                </div>
+                
+                {/* Today Marker */}
+                <div className="flex justify-center mb-4">
+                  <div 
+                    className="px-3 py-1 rounded-lg text-xs font-medium"
+                    style={{ backgroundColor: "#182229", color: "#d1d7db" }}
+                  >
+                    TODAY
+                  </div>
+                </div>
+                
                 {messages?.map(msg => (
-                  <MessageBubble key={msg.id} message={msg} />
+                  <MessageBubble 
+                    key={msg.id} 
+                    message={msg} 
+                    onDelete={(isAdmin || isSupport) ? () => deleteMessageMutation.mutate(msg.id) : undefined}
+                  />
                 ))}
                 <div ref={messagesEndRef} />
               </div>
@@ -1345,13 +1478,100 @@ export default function WhatsAppPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Rename Chat Dialog */}
+      <Dialog open={showRenameDialog} onOpenChange={setShowRenameDialog}>
+        <DialogContent 
+          className="border max-w-md"
+          style={{ backgroundColor: "#233138", borderColor: "#2a3942" }}
+        >
+          <DialogHeader>
+            <DialogTitle className="text-slate-100">Rename Chat</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm text-slate-300">Chat Name</label>
+              <Input
+                value={renameChatName}
+                onChange={(e) => setRenameChatName(e.target.value)}
+                placeholder="Enter new name"
+                className="border-slate-600 bg-[#2a3942] text-slate-100"
+                data-testid="input-rename-chat"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => setShowRenameDialog(false)}
+                className="border-slate-600 text-slate-300 hover:bg-[#2a3942]"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  if (!renameChatName.trim() || !selectedChat) return;
+                  updateChatMutation.mutate({
+                    id: selectedChat.id,
+                    updates: { clientName: renameChatName.trim() }
+                  });
+                  setShowRenameDialog(false);
+                }}
+                disabled={updateChatMutation.isPending}
+                className="bg-[#00a884] hover:bg-[#00a884]/90 text-white"
+                data-testid="button-submit-rename"
+              >
+                Rename
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Chat Confirmation Dialog */}
+      <Dialog open={showDeleteChatConfirm} onOpenChange={setShowDeleteChatConfirm}>
+        <DialogContent 
+          className="border max-w-md"
+          style={{ backgroundColor: "#233138", borderColor: "#2a3942" }}
+        >
+          <DialogHeader>
+            <DialogTitle className="text-slate-100">Delete Chat</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-slate-300">
+              Are you sure you want to delete this chat? This will permanently delete all messages and cannot be undone.
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => setShowDeleteChatConfirm(false)}
+                className="border-slate-600 text-slate-300 hover:bg-[#2a3942]"
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  if (!selectedChat) return;
+                  deleteChatMutation.mutate(selectedChat.id);
+                  setShowDeleteChatConfirm(false);
+                }}
+                disabled={deleteChatMutation.isPending}
+                data-testid="button-confirm-delete-chat"
+              >
+                Delete
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-function MessageBubble({ message }: { message: Message }) {
-  const isUser = message.senderType === "user";
+function MessageBubble({ message, onDelete }: { message: Message; onDelete?: () => void }) {
+  const isAgent = message.senderType === "agent" || message.senderType === "user";
   const isSystem = message.messageType === "system";
+  const [showMenu, setShowMenu] = useState(false);
   
   if (isSystem) {
     return (
@@ -1367,28 +1587,67 @@ function MessageBubble({ message }: { message: Message }) {
   }
   
   return (
-    <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
+    <div 
+      className={cn("flex group relative", isAgent ? "justify-end" : "justify-start")}
+      onMouseEnter={() => setShowMenu(true)}
+      onMouseLeave={() => setShowMenu(false)}
+    >
+      {/* Delete button on hover */}
+      {onDelete && showMenu && (
+        <button
+          onClick={onDelete}
+          className={cn(
+            "absolute top-1 p-1 rounded hover:bg-white/10 transition-opacity",
+            isAgent ? "left-0 -translate-x-full mr-2" : "right-0 translate-x-full ml-2"
+          )}
+          data-testid={`button-delete-message-${message.id}`}
+        >
+          <Trash2 className="w-4 h-4 text-red-400" />
+        </button>
+      )}
+      
       <div
         className="max-w-[65%] rounded-lg px-3 py-2 shadow-sm"
         style={{ 
-          backgroundColor: isUser ? "#005c4b" : "#202c33",
+          backgroundColor: isAgent ? "#005c4b" : "#202c33",
         }}
       >
         {message.messageType === "file" && message.fileUrl && (
           <div className="mb-2">
-            <img 
-              src={message.fileUrl} 
-              alt={message.fileName || "Attachment"} 
-              className="rounded-lg max-w-full"
-            />
+            {message.fileUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+              <img 
+                src={message.fileUrl} 
+                alt={message.fileName || "Attachment"} 
+                className="rounded-lg max-w-full"
+              />
+            ) : message.fileUrl.match(/\.(mp3|ogg|wav|webm|m4a|aac)$/i) ? (
+              <div className="flex items-center gap-2 py-1">
+                <Play className="w-5 h-5 text-white" />
+                <audio controls className="h-8 max-w-[200px]">
+                  <source src={message.fileUrl} />
+                </audio>
+              </div>
+            ) : (
+              <a 
+                href={message.fileUrl} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 text-blue-300 hover:underline"
+              >
+                <File className="w-4 h-4" />
+                <span className="text-sm">{message.fileName || "Download file"}</span>
+              </a>
+            )}
           </div>
         )}
-        <p className="text-sm text-slate-100 whitespace-pre-wrap">{message.content}</p>
+        {message.content && message.content !== "Voice message" && (
+          <p className="text-sm text-slate-100 whitespace-pre-wrap">{message.content}</p>
+        )}
         <div className="flex items-center justify-end gap-1 mt-1">
           <span className="text-[11px]" style={{ color: "#8696a0" }}>
             {format(new Date(message.createdAt!), "HH:mm")}
           </span>
-          {isUser && (
+          {isAgent && (
             <CheckCheck className="w-4 h-4" style={{ color: "#53bdeb" }} />
           )}
         </div>
