@@ -54,6 +54,7 @@ export interface IStorage {
 
   // Stats
   getStats(): Promise<any>;
+  getWhatsAppAnalytics(): Promise<{ todayNewChats: number; totalChats: number; thisWeekNewChats: number; thisMonthNewChats: number }>;
 
   // Payment Verifications
   getPaymentVerifications(role: string, userId: number): Promise<PaymentVerificationWithUsers[]>;
@@ -357,6 +358,27 @@ export class DatabaseStorage implements IStorage {
         pendingPayments,
       },
       chats: chatStats
+    };
+  }
+
+  async getWhatsAppAnalytics(): Promise<{ todayNewChats: number; totalChats: number; thisWeekNewChats: number; thisMonthNewChats: number }> {
+    const allChats = await db.select().from(chats).where(isNotNull(chats.clientPhone));
+    
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const thisWeekStart = new Date(today);
+    thisWeekStart.setDate(today.getDate() - today.getDay()); // Start of week (Sunday)
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    
+    const todayNewChats = allChats.filter(c => c.createdAt && new Date(c.createdAt) >= today).length;
+    const thisWeekNewChats = allChats.filter(c => c.createdAt && new Date(c.createdAt) >= thisWeekStart).length;
+    const thisMonthNewChats = allChats.filter(c => c.createdAt && new Date(c.createdAt) >= thisMonthStart).length;
+    
+    return {
+      todayNewChats,
+      totalChats: allChats.length,
+      thisWeekNewChats,
+      thisMonthNewChats
     };
   }
 

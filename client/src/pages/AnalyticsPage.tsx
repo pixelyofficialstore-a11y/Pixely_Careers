@@ -33,7 +33,8 @@ import {
   Megaphone,
   Layers,
   Palette,
-  Download
+  Download,
+  MessageSquare
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -123,6 +124,15 @@ export default function AnalyticsPage() {
   
   const { data: teamMembers } = useQuery<User[]>({
     queryKey: ["/api/users"],
+  });
+
+  const { data: whatsappAnalytics } = useQuery<{
+    todayNewChats: number;
+    totalChats: number;
+    thisWeekNewChats: number;
+    thisMonthNewChats: number;
+  }>({
+    queryKey: ["/api/whatsapp-analytics"],
   });
 
   // Only admin can access analytics
@@ -357,6 +367,44 @@ export default function AnalyticsPage() {
           color="orange"
           testId="stat-best-campaign"
         />
+      </div>
+
+      {/* WhatsApp Analytics Section */}
+      <div className="mt-8">
+        <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+          <MessageSquare className="w-5 h-5 text-green-500" />
+          WhatsApp Messages Report
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <StatCard 
+            title="New Contacts Today" 
+            value={whatsappAnalytics?.todayNewChats || 0} 
+            icon={MessageSquare} 
+            color="green"
+            testId="stat-today-contacts"
+          />
+          <StatCard 
+            title="This Week" 
+            value={whatsappAnalytics?.thisWeekNewChats || 0} 
+            icon={MessageSquare}
+            color="blue"
+            testId="stat-week-contacts"
+          />
+          <StatCard 
+            title="This Month" 
+            value={whatsappAnalytics?.thisMonthNewChats || 0} 
+            icon={MessageSquare}
+            color="purple"
+            testId="stat-month-contacts"
+          />
+          <StatCard 
+            title="Total Contacts" 
+            value={whatsappAnalytics?.totalChats || 0} 
+            icon={Users}
+            color="orange"
+            testId="stat-total-contacts"
+          />
+        </div>
       </div>
 
       <Tabs defaultValue="designers" className="w-full">

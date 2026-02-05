@@ -403,6 +403,12 @@ export async function registerRoutes(
     res.json(chat);
   });
 
+  // WhatsApp Chat Analytics - Admin only
+  app.get("/api/whatsapp-analytics", requireRole(["admin"]), async (req, res) => {
+    const analytics = await storage.getWhatsAppAnalytics();
+    res.json(analytics);
+  });
+
   app.post(api.chats.sendMessage.path, requireAuth, async (req, res) => {
     const chatId = Number(req.params.id);
     const { content } = req.body;
