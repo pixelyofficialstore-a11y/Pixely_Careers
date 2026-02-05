@@ -1775,8 +1775,8 @@ export async function registerRoutes(
         return res.sendStatus(403);
       }
     } else if (user.role === 'support') {
-      // Support can update: tags, assignedToId, linkedOrderId
-      const allowedUpdates = ['tags', 'assignedToId', 'linkedOrderId'];
+      // Support can update: tags, assignedToId, linkedOrderId, isPinned
+      const allowedUpdates = ['tags', 'assignedToId', 'linkedOrderId', 'isPinned'];
       const keys = Object.keys(updates);
       if (keys.some(k => !allowedUpdates.includes(k))) {
         return res.sendStatus(403);
@@ -1920,6 +1920,98 @@ export async function registerRoutes(
     }
 
     res.json({ success: true, reactionId });
+  });
+
+  // Forward a message to multiple chats
+  app.post("/api/messages/:id/forward", requireRole(["admin", "support"]), async (req, res) => {
+    const messageId = Number(req.params.id);
+    const { chatIds } = req.body as { chatIds: number[] };
+    const user = req.user as User;
+
+    if (!chatIds || !Array.isArray(chatIds) || chatIds.length === 0) {
+      return res.status(400).json({ error: "At least one chat ID is required" });
+    }
+
+    // Get the original message
+    const originalMessage = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
+    if (originalMessage.length === 0) {
+      return res.sendStatus(404);
+    }
+
+    const msg = originalMessage[0];
+    const results: { chatId: number; success: boolean; error?: string }[] = [];
+
+    // Forward to each chat
+    for (const targetChatId of chatIds) {
+      try {
+        const targetChat = await storage.getChat(targetChatId);
+        if (!targetChat) {
+          results.push({ chatId: targetChatId, success: false, error: "Chat not found" });
+          continue;
+        }
+
+        // Create a copy of the message in the target chat
+        const forwardedContent = msg.messageType === "file" 
+          ? `[Forwarded] ${msg.content}`
+          : `[Forwarded]\n${msg.content}`;
+
+        let newMessage;
+        if (msg.messageType === "file" && msg.fileUrl) {
+          newMessage = await storage.createMessageWithFile(
+            targetChatId,
+            user.id,
+            "agent",
+            forwardedContent,
+            msg.fileUrl,
+            msg.fileName || undefined,
+            msg.fileMeta as { size?: number; type?: string } | undefined
+          );
+        } else {
+          newMessage = await storage.createMessage(
+            targetChatId,
+            user.id,
+            "agent",
+            forwardedContent
+          );
+        }
+
+        // Update the target chat's last message
+        await storage.updateChat(targetChatId, {
+          lastMessage: forwardedContent.substring(0, 100),
+          lastMessageAt: new Date(),
+        });
+
+        // If the target chat has a WhatsApp phone, send the message via WhatsApp
+        if (targetChat.clientPhone && targetChat.platform === "whatsapp") {
+          const formattedPhone = formatPhoneForWhatsApp(targetChat.clientPhone);
+          
+          if (msg.messageType === "file" && msg.fileUrl) {
+            // For files, we need to re-upload and send
+            // This is a simplified version - just send a text notification
+            await sendWhatsAppMessage(formattedPhone, forwardedContent);
+          } else {
+            // Send text message
+            const waResult = await sendWhatsAppMessage(formattedPhone, msg.content);
+            if (waResult) {
+              await storage.updateMessageExternalId(newMessage.id, waResult);
+            }
+          }
+        }
+
+        results.push({ chatId: targetChatId, success: true });
+      } catch (error) {
+        console.error(`Failed to forward to chat ${targetChatId}:`, error);
+        results.push({ chatId: targetChatId, success: false, error: "Internal error" });
+      }
+    }
+
+    const successCount = results.filter(r => r.success).length;
+    res.json({ 
+      success: successCount > 0, 
+      forwarded: successCount, 
+      total: chatIds.length,
+      results 
+    });
   });
 
   // Delete a chat (admin only)

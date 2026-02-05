@@ -81,6 +81,7 @@ export const chats = pgTable("chats", {
   unreadCount: integer("unread_count").default(0),
   tags: jsonb("tags").$type<string[]>(), // ["New", "Satisfied", etc]
   isInternal: boolean("is_internal").default(false), // True for internal team chats (like Payment Verification)
+  isPinned: boolean("is_pinned").default(false), // Pinned chats appear at top
   createdAt: timestamp("created_at").defaultNow(),
 });
 

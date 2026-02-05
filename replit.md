@@ -38,7 +38,7 @@ Three distinct roles are implemented:
 ### Features
 - **Order Management**: Creation, editing, assignment, status tracking (New, Working, Ready, Delivered, Canceled), and soft deletion.
 - **Team Management**: Admin-only user creation and editing.
-- **Client Communication**: WhatsApp chat module with tagging, assignment, order linking, voice message recording/sending, chat renaming (admin/support), message deletion (admin/support), and full chat deletion with cascade (admin only). UI features include message truncation in chat list, encryption notice banner, and file/audio message display.
+- **Client Communication**: WhatsApp chat module with tagging, assignment, order linking, voice message recording/sending (M4A/AAC format for iOS compatibility), chat renaming (admin/support), message deletion (admin/support), and full chat deletion with cascade (admin only). UI features include message truncation in chat list with professional icons (voice, video, photo, document), encryption notice banner, file/audio message display, voice message download button, message reactions on all messages with WhatsApp ID, chat pinning (unlimited, shown at top with pin icon), and message forwarding to multiple chats.
 - **Payment Verification**: Dedicated workflow for approving/disapproving advance, full, and remaining payments with screenshot uploads. Admin has full control, while Support/Designer can submit requests.
 - **Analytics & Reporting**: Admin-only dashboard with financial metrics (collected, remaining, outstanding), designer performance tracking, and marketing analytics. PDF export functionality is available for reports.
 

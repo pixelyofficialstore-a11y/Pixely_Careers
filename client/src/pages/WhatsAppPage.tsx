@@ -45,6 +45,8 @@ import {
   Upload,
   ShoppingBag,
   Reply,
+  Pin,
+  Forward,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -117,8 +119,57 @@ function ChatListItem({
   const getMessagePreview = () => {
     if (!chat.lastMessage) return "No messages yet";
     const preview = chat.lastMessage;
+    
+    // Professional message type previews
+    if (preview === "[Audio sent]" || preview.includes("Voice message") || preview.toLowerCase().includes("audio")) {
+      return "Voice message";
+    }
+    if (preview === "[Video sent]" || preview.includes(".mp4")) {
+      return "Video";
+    }
+    if (preview === "[Image sent]" || preview.includes(".png") || preview.includes(".jpg") || preview.includes(".jpeg")) {
+      return "Photo";
+    }
+    if (preview === "[Document sent]" || preview.includes(".pdf") || preview.includes(".docx") || preview.includes(".doc")) {
+      return "Document";
+    }
+    if (preview.startsWith("Sent:") && (preview.includes(".ogg") || preview.includes("audio_"))) {
+      return "Voice message";
+    }
+    if (preview.startsWith("Sent a file")) {
+      return "File";
+    }
+    if (preview.includes("whatsapp_audio") || preview.includes("voice_message")) {
+      return "Voice message";
+    }
+    
     if (preview.length > 40) return `${preview.substring(0, 40)}...`;
     return preview;
+  };
+  
+  // Get icon for message preview
+  const getPreviewIcon = () => {
+    if (!chat.lastMessage) return null;
+    const preview = chat.lastMessage;
+    
+    if (preview === "[Audio sent]" || preview.includes("Voice message") || preview.toLowerCase().includes("audio") ||
+        preview.includes("whatsapp_audio") || preview.includes("voice_message") ||
+        (preview.startsWith("Sent:") && (preview.includes(".ogg") || preview.includes("audio_")))) {
+      return <Mic className="h-3 w-3 flex-shrink-0" />;
+    }
+    if (preview === "[Video sent]" || preview.includes(".mp4")) {
+      return <Play className="h-3 w-3 flex-shrink-0" />;
+    }
+    if (preview === "[Image sent]" || preview.includes(".png") || preview.includes(".jpg") || preview.includes(".jpeg")) {
+      return <ImageIcon className="h-3 w-3 flex-shrink-0" />;
+    }
+    if (preview === "[Document sent]" || preview.includes(".pdf") || preview.includes(".docx") || preview.includes(".doc")) {
+      return <File className="h-3 w-3 flex-shrink-0" />;
+    }
+    if (preview.startsWith("Sent a file")) {
+      return <Paperclip className="h-3 w-3 flex-shrink-0" />;
+    }
+    return null;
   };
 
   return (
@@ -162,6 +213,10 @@ function ChatListItem({
         
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1 text-sm text-whatsapp-text-secondary truncate flex-1 min-w-0">
+            {(chat as any).isPinned && (
+              <Pin className="h-3 w-3 text-whatsapp-text-secondary flex-shrink-0" />
+            )}
+            {getPreviewIcon()}
             <span className="truncate">{getMessagePreview()}</span>
           </div>
           
@@ -250,6 +305,16 @@ function VoiceMessagePlayer({
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const playedBars = Math.floor((progress / 100) * waveformBars.length);
   
+  const handleDownload = () => {
+    if (!message.fileUrl) return;
+    const link = document.createElement('a');
+    link.href = message.fileUrl;
+    link.download = message.fileName || `voice_message_${message.id}.m4a`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+  
   return (
     <div className="flex items-center gap-2 min-w-[280px] max-w-[320px]">
       <audio 
@@ -311,6 +376,16 @@ function VoiceMessagePlayer({
           </div>
         </div>
       </div>
+      
+      {/* Download Button */}
+      <button
+        onClick={handleDownload}
+        className="h-8 w-8 rounded-full bg-whatsapp-bg-input hover:bg-whatsapp-hover flex items-center justify-center flex-shrink-0 transition-colors"
+        title="Download voice message"
+        data-testid="button-voice-download"
+      >
+        <Download className="h-4 w-4 text-whatsapp-icon" />
+      </button>
     </div>
   );
 }
@@ -320,12 +395,14 @@ function MessageBubble({
   onDelete,
   onReact,
   onReply,
+  onForward,
   replyToMessage
 }: { 
   message: Message; 
   onDelete?: () => void;
   onReact?: (emoji: string) => void;
   onReply?: () => void;
+  onForward?: () => void;
   replyToMessage?: Message | null;
 }) {
   const [isPlaying, setIsPlaying] = useState(false);
@@ -616,8 +693,8 @@ function MessageBubble({
             </button>
           )}
           
-          {/* React button for incoming messages */}
-          {!isOutgoing && onReact && (
+          {/* React button for all messages with externalMessageId */}
+          {onReact && (
             <div className="relative">
               <button
                 onClick={() => setShowReactionPicker(!showReactionPicker)}
@@ -643,6 +720,18 @@ function MessageBubble({
                 </div>
               )}
             </div>
+          )}
+          
+          {/* Forward button */}
+          {onForward && (
+            <button
+              onClick={onForward}
+              className="p-1.5 hover:bg-whatsapp-hover rounded"
+              title="Forward message"
+              data-testid="button-forward-message"
+            >
+              <Forward className="h-4 w-4 text-whatsapp-icon" />
+            </button>
           )}
           
           {/* Delete button */}
@@ -833,6 +922,32 @@ export default function WhatsAppPage() {
       toast({ title: "Deleted", description: "Chat deleted" });
     },
   });
+
+  const togglePinMutation = useMutation({
+    mutationFn: ({ chatId, isPinned }: { chatId: number; isPinned: boolean }) =>
+      apiRequest("PATCH", `/api/chats/${chatId}`, { isPinned }),
+    onSuccess: (_, { isPinned }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
+      toast({ title: isPinned ? "Pinned" : "Unpinned", description: isPinned ? "Chat pinned to top" : "Chat unpinned" });
+    },
+  });
+
+  const forwardMessageMutation = useMutation({
+    mutationFn: async ({ messageId, chatIds }: { messageId: number; chatIds: number[] }) =>
+      apiRequest("POST", `/api/messages/${messageId}/forward`, { chatIds }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
+      setForwardingMessage(null);
+      setSelectedForwardChats([]);
+      toast({ title: "Forwarded", description: "Message forwarded successfully" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to forward message", variant: "destructive" });
+    },
+  });
+
+  const [forwardingMessage, setForwardingMessage] = useState<Message | null>(null);
+  const [selectedForwardChats, setSelectedForwardChats] = useState<number[]>([]);
 
   const sendVoiceWhatsAppMutation = useMutation({
     mutationFn: async ({ chatId, audioBlob }: { chatId: number; audioBlob: Blob }) => {
@@ -1259,6 +1374,12 @@ export default function WhatsAppPage() {
     }
 
     return filtered.sort((a, b) => {
+      // Pinned chats always come first
+      const aPinned = (a as any).isPinned ? 1 : 0;
+      const bPinned = (b as any).isPinned ? 1 : 0;
+      if (aPinned !== bPinned) return bPinned - aPinned;
+      
+      // Then sort by last message time
       const aTime = new Date(a.lastMessageAt || a.createdAt || 0).getTime();
       const bTime = new Date(b.lastMessageAt || b.createdAt || 0).getTime();
       return bTime - aTime;
@@ -1583,10 +1704,11 @@ export default function WhatsAppPage() {
                           key={message.id} 
                           message={message}
                           onDelete={isAdminOrSupport ? () => deleteMessageMutation.mutate(message.id) : undefined}
-                          onReact={isAdminOrSupport && message.senderType === "client" && message.externalMessageId 
+                          onReact={isAdminOrSupport && message.externalMessageId 
                             ? (emoji: string) => reactToMessageMutation.mutate({ messageId: message.id, emoji }) 
                             : undefined}
                           onReply={isAdminOrSupport ? () => setReplyToMessage(message) : undefined}
+                          onForward={isAdminOrSupport ? () => setForwardingMessage(message) : undefined}
                           replyToMessage={replyMsg}
                         />
                       );
@@ -2079,6 +2201,19 @@ export default function WhatsAppPage() {
             <div className="h-2 bg-whatsapp-bg-dark" />
 
             <div className="bg-whatsapp-header">
+              <button 
+                onClick={() => togglePinMutation.mutate({ 
+                  chatId: selectedChat.id, 
+                  isPinned: !(selectedChat as any).isPinned 
+                })}
+                className="w-full px-6 py-4 flex items-center gap-6 hover:bg-whatsapp-hover transition-colors"
+                data-testid="button-toggle-pin"
+              >
+                <Pin className={cn("h-5 w-5", (selectedChat as any).isPinned ? "text-whatsapp-green" : "text-whatsapp-icon")} />
+                <span className="text-whatsapp-text-primary">
+                  {(selectedChat as any).isPinned ? "Unpin chat" : "Pin chat"}
+                </span>
+              </button>
               <button className="w-full px-6 py-4 flex items-center gap-6 hover:bg-whatsapp-hover transition-colors">
                 <Star className="h-5 w-5 text-whatsapp-icon" />
                 <span className="text-whatsapp-text-primary">Starred messages</span>
@@ -2333,6 +2468,118 @@ export default function WhatsAppPage() {
             >
               Delete
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Forward Message Dialog */}
+      <Dialog open={!!forwardingMessage} onOpenChange={(open) => !open && setForwardingMessage(null)}>
+        <DialogContent className="border bg-whatsapp-bg-panel border-whatsapp-divider max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-whatsapp-text-primary">Forward Message</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-whatsapp-text-secondary">
+              Select chats to forward this message to:
+            </p>
+            
+            {/* Message Preview */}
+            {forwardingMessage && (
+              <div className="p-3 bg-whatsapp-bg-input rounded-lg border border-whatsapp-divider">
+                <p className="text-sm text-whatsapp-text-secondary line-clamp-2">
+                  {forwardingMessage.messageType === "file" 
+                    ? `📎 ${forwardingMessage.fileName || "File"}`
+                    : forwardingMessage.content}
+                </p>
+              </div>
+            )}
+            
+            {/* Chat Selection */}
+            <ScrollArea className="h-[300px]">
+              <div className="space-y-1">
+                {(chats || []).filter(c => !c.isInternal && c.id !== selectedChat?.id).map(chat => {
+                  const chatDisplayName = chat.clientName && chat.clientName !== "New Lead" && chat.clientName.trim() !== "" 
+                    ? chat.clientName 
+                    : chat.clientPhone || "Unknown";
+                  const isSelected = selectedForwardChats.includes(chat.id);
+                  
+                  return (
+                    <button
+                      key={chat.id}
+                      onClick={() => {
+                        setSelectedForwardChats(prev => 
+                          prev.includes(chat.id) 
+                            ? prev.filter(id => id !== chat.id)
+                            : [...prev, chat.id]
+                        );
+                      }}
+                      className={cn(
+                        "w-full flex items-center gap-3 p-3 rounded-lg transition-colors",
+                        isSelected ? "bg-whatsapp-green/20" : "hover:bg-whatsapp-hover"
+                      )}
+                      data-testid={`forward-chat-${chat.id}`}
+                    >
+                      <div className={cn(
+                        "h-5 w-5 rounded-full border-2 flex items-center justify-center transition-colors",
+                        isSelected ? "bg-whatsapp-green border-whatsapp-green" : "border-whatsapp-icon"
+                      )}>
+                        {isSelected && <Check className="h-3 w-3 text-white" />}
+                      </div>
+                      <Avatar className="h-10 w-10">
+                        <AvatarFallback 
+                          className="text-white font-medium"
+                          style={{ backgroundColor: getAvatarColor(chatDisplayName) }}
+                        >
+                          {chatDisplayName.charAt(0).toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 text-left">
+                        <div className="text-whatsapp-text-primary font-medium">
+                          {chatDisplayName}
+                        </div>
+                        <div className="text-xs text-whatsapp-text-secondary">
+                          {chat.clientPhone}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </ScrollArea>
+            
+            {selectedForwardChats.length > 0 && (
+              <div className="text-sm text-whatsapp-text-secondary">
+                {selectedForwardChats.length} chat{selectedForwardChats.length > 1 ? 's' : ''} selected
+              </div>
+            )}
+            
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setForwardingMessage(null);
+                  setSelectedForwardChats([]);
+                }}
+                className="border-whatsapp-divider text-whatsapp-text-secondary hover:bg-whatsapp-hover"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  if (forwardingMessage && selectedForwardChats.length > 0) {
+                    forwardMessageMutation.mutate({
+                      messageId: forwardingMessage.id,
+                      chatIds: selectedForwardChats
+                    });
+                  }
+                }}
+                disabled={selectedForwardChats.length === 0 || forwardMessageMutation.isPending}
+                className="bg-whatsapp-green hover:bg-whatsapp-green-dark text-white"
+                data-testid="button-confirm-forward"
+              >
+                {forwardMessageMutation.isPending ? "Forwarding..." : `Forward${selectedForwardChats.length > 0 ? ` (${selectedForwardChats.length})` : ''}`}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
