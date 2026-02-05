@@ -43,6 +43,7 @@ import {
   MapPin,
   UserCircle,
   Upload,
+  ShoppingBag,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -635,6 +636,7 @@ export default function WhatsAppPage() {
   const [newChatName, setNewChatName] = useState("");
   const [newChatPhone, setNewChatPhone] = useState("");
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showCatalogPicker, setShowCatalogPicker] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
@@ -679,6 +681,12 @@ export default function WhatsAppPage() {
   const { data: orders } = useQuery<Order[]>({
     queryKey: ["/api/orders"],
   });
+
+  const { data: catalogs } = useQuery<{ id: number; name: string; description: string; price: number; imageUrl: string; isActive: boolean }[]>({
+    queryKey: ["/api/catalogs"],
+  });
+
+  const activeCatalogs = catalogs?.filter(c => c.isActive) || [];
 
   const linkedOrder = orders?.find(o => o.id === selectedChat?.linkedOrderId);
   const designers = teamMembers?.filter(u => u.role === "designer") || [];
@@ -1510,6 +1518,54 @@ export default function WhatsAppPage() {
               </div>
             )}
 
+            {showCatalogPicker && (
+              <div className="absolute bottom-20 left-4 rounded-lg border shadow-xl z-50 p-3 bg-whatsapp-bg-panel border-whatsapp-divider w-80 max-h-96 overflow-y-auto">
+                <div className="flex items-center justify-between mb-3 border-b pb-2 border-whatsapp-divider">
+                  <h4 className="font-medium text-whatsapp-text-primary flex items-center gap-2">
+                    <ShoppingBag className="w-4 h-4" />
+                    Catalog Items
+                  </h4>
+                  <button 
+                    onClick={() => setShowCatalogPicker(false)}
+                    className="text-whatsapp-text-secondary hover:text-whatsapp-text-primary"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                {activeCatalogs.length === 0 ? (
+                  <p className="text-sm text-whatsapp-text-secondary text-center py-4">No catalog items available</p>
+                ) : (
+                  <div className="space-y-2">
+                    {activeCatalogs.map(item => (
+                      <button
+                        key={item.id}
+                        className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-whatsapp-hover text-left"
+                        onClick={() => {
+                          const catalogMessage = `*${item.name}*\n${item.description}\n\nPrice: Rs. ${(item.price / 100).toLocaleString()}`;
+                          setMessageText(catalogMessage);
+                          setShowCatalogPicker(false);
+                          inputRef.current?.focus();
+                        }}
+                      >
+                        {item.imageUrl ? (
+                          <img src={item.imageUrl} alt={item.name} className="w-12 h-12 rounded object-cover" />
+                        ) : (
+                          <div className="w-12 h-12 rounded bg-whatsapp-bg-input flex items-center justify-center">
+                            <ShoppingBag className="w-6 h-6 text-whatsapp-icon" />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-whatsapp-text-primary truncate">{item.name}</p>
+                          <p className="text-xs text-whatsapp-text-secondary truncate">{item.description}</p>
+                          <p className="text-sm text-whatsapp-green font-medium">Rs. {(item.price / 100).toLocaleString()}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {isRecording || audioBlob ? (
               <div className="flex items-center gap-3 w-full">
                 <Button
@@ -1589,6 +1645,15 @@ export default function WhatsAppPage() {
                   data-testid="button-attach-file"
                 >
                   <Paperclip className="w-6 h-6" />
+                </Button>
+                <Button 
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setShowCatalogPicker(!showCatalogPicker)}
+                  className={cn("text-whatsapp-icon hover:bg-whatsapp-hover", showCatalogPicker && "text-whatsapp-green")}
+                  data-testid="button-catalog"
+                >
+                  <ShoppingBag className="w-6 h-6" />
                 </Button>
                 <div className="flex-1">
                   <Textarea
