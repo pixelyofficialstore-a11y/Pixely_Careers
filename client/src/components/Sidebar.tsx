@@ -41,6 +41,13 @@ export function Sidebar({ onNavigate }: SidebarProps) {
     retry: false, // Don't retry if fails (non-admin would get 403)
   });
   const pendingPaymentCount = pendingPaymentData?.count || 0;
+  
+  // Fetch unread chats count for WhatsApp badge
+  const { data: unreadChatsData } = useQuery<{ count: number }>({
+    queryKey: ["/api/chats/unread-count"],
+    refetchInterval: 5000, // Refresh every 5 seconds for real-time feel
+  });
+  const unreadChatsCount = unreadChatsData?.count || 0;
 
   // Avatar upload mutation
   const avatarMutation = useMutation({
@@ -113,7 +120,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
               const showBadge = link.href === "/payments" && isAdmin && pendingPaymentCount > 0;
               const isWhatsApp = link.href === "/whatsapp";
               
-              // WhatsApp uses green icon styling
+              // WhatsApp uses green icon styling with unread count badge
               if (isWhatsApp) {
                 return (
                   <Link
@@ -130,6 +137,14 @@ export function Sidebar({ onNavigate }: SidebarProps) {
                   >
                     <Icon className="w-5 h-5 text-green-500 group-hover:text-green-400" />
                     <span className="flex-1">{link.label}</span>
+                    {unreadChatsCount > 0 && (
+                      <Badge 
+                        className="h-5 min-w-[20px] px-1.5 text-xs font-bold bg-green-600 hover:bg-green-600"
+                        data-testid="badge-unread-chats"
+                      >
+                        {unreadChatsCount}
+                      </Badge>
+                    )}
                   </Link>
                 );
               }

@@ -183,6 +183,9 @@ function ChatListItem({
     >
       <div className="relative flex-shrink-0">
         <Avatar className="h-12 w-12">
+          {(chat as any).profilePicUrl && (
+            <AvatarImage src={(chat as any).profilePicUrl} alt={displayName} />
+          )}
           <AvatarFallback 
             className="text-white font-medium"
             style={{ backgroundColor: getAvatarColor(displayName) }}
@@ -833,6 +836,8 @@ export default function WhatsAppPage() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const notificationAudioRef = useRef<HTMLAudioElement | null>(null);
+  const previousUnreadRef = useRef<number>(0);
 
   const isAdmin = user?.role === "admin";
   const isSupport = user?.role === "support";
@@ -872,6 +877,22 @@ export default function WhatsAppPage() {
 
   const linkedOrder = orders?.find(o => o.id === selectedChat?.linkedOrderId);
   const designers = teamMembers?.filter(u => u.role === "designer") || [];
+  
+  // Initialize notification audio and play on new messages
+  useEffect(() => {
+    notificationAudioRef.current = new Audio("/sounds/notification.mp3");
+    notificationAudioRef.current.volume = 0.5;
+  }, []);
+  
+  // Play notification sound when unread count increases
+  useEffect(() => {
+    if (!chats) return;
+    const totalUnread = chats.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
+    if (totalUnread > previousUnreadRef.current && previousUnreadRef.current > 0) {
+      notificationAudioRef.current?.play().catch(() => {});
+    }
+    previousUnreadRef.current = totalUnread;
+  }, [chats]);
 
   const createChatMutation = useMutation({
     mutationFn: (data: { clientName: string; clientPhone?: string }) =>

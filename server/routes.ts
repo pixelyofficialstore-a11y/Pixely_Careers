@@ -408,6 +408,14 @@ export async function registerRoutes(
     const analytics = await storage.getWhatsAppAnalytics();
     res.json(analytics);
   });
+  
+  // Get unread chats count for sidebar badge
+  app.get("/api/chats/unread-count", requireAuth, async (req, res) => {
+    const user = req.user as User;
+    const allChats = await storage.getChats(user.role, user.id);
+    const unreadChatsCount = allChats.filter(c => (c.unreadCount || 0) > 0).length;
+    res.json({ count: unreadChatsCount });
+  });
 
   app.post(api.chats.sendMessage.path, requireAuth, async (req, res) => {
     const chatId = Number(req.params.id);
@@ -1950,10 +1958,8 @@ export async function registerRoutes(
           continue;
         }
 
-        // Create a copy of the message in the target chat
-        const forwardedContent = msg.messageType === "file" 
-          ? `[Forwarded] ${msg.content}`
-          : `[Forwarded]\n${msg.content}`;
+        // Create a copy of the message in the target chat (without forwarded prefix)
+        const forwardedContent = msg.content;
 
         let newMessage;
         if (msg.messageType === "file" && msg.fileUrl) {
@@ -2142,8 +2148,18 @@ export async function registerRoutes(
     }
     
     // Screenshot is recommended but not strictly required (to allow flexibility)
+    // Upload to Object Storage for persistence across deployments
     const file = req.file;
-    const screenshotUrl = file ? `/api/payment-files/${file.filename}` : null;
+    let screenshotUrl: string | null = null;
+    
+    if (file) {
+      const objectPath = `payments/${Date.now()}-${file.originalname}`;
+      const fileBuffer = fs.readFileSync(file.path);
+      await objectStorageServiceInstance.uploadObject(objectPath, fileBuffer, file.mimetype);
+      screenshotUrl = `/api/payment-files/${encodeURIComponent(objectPath.replace('payments/', ''))}`;
+      // Clean up local temp file
+      fs.unlinkSync(file.path);
+    }
     
     const verification = await storage.createPaymentVerification({
       orderId: Number(orderId),

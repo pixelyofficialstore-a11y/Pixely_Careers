@@ -82,6 +82,7 @@ export const chats = pgTable("chats", {
   tags: jsonb("tags").$type<string[]>(), // ["New", "Satisfied", etc]
   isInternal: boolean("is_internal").default(false), // True for internal team chats (like Payment Verification)
   isPinned: boolean("is_pinned").default(false), // Pinned chats appear at top
+  profilePicUrl: text("profile_pic_url"), // Contact's WhatsApp profile picture URL
   createdAt: timestamp("created_at").defaultNow(),
 });
 
