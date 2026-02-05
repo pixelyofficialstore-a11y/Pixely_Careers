@@ -1407,7 +1407,7 @@ export default function WhatsAppPage() {
 
           {/* Messages */}
           <div 
-            className="flex-1 relative"
+            className="flex-1 relative overflow-hidden min-h-0"
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
