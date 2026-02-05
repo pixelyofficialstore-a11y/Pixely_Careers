@@ -94,6 +94,27 @@ export class ObjectStorageService {
     return null;
   }
 
+  // Get a private object from the private directory.
+  async getPrivateObject(filePath: string): Promise<File | null> {
+    let entityDir = this.getPrivateObjectDir();
+    if (!entityDir.endsWith("/")) {
+      entityDir = `${entityDir}/`;
+    }
+    
+    const fullPath = `${entityDir}${filePath}`;
+    const { bucketName, objectName } = parseObjectPath(fullPath);
+    const bucket = objectStorageClient.bucket(bucketName);
+    const file = bucket.file(objectName);
+
+    // Check if file exists
+    const [exists] = await file.exists();
+    if (exists) {
+      return file;
+    }
+
+    return null;
+  }
+
   // Downloads an object to the response.
   async downloadObject(file: File, res: Response, cacheTtlSec: number = 3600) {
     try {

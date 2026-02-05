@@ -2314,9 +2314,9 @@ export async function registerRoutes(
       return res.sendFile(localFilePath);
     }
     
-    // Try to find in object storage
+    // Try to find in object storage (using private directory where files are uploaded)
     try {
-      const objectFile = await objectStorageService.searchPublicObject(`payments/${sanitized}`);
+      const objectFile = await objectStorageService.getPrivateObject(`payments/${sanitized}`);
       if (objectFile) {
         await objectStorageService.downloadObject(objectFile, res);
         return;

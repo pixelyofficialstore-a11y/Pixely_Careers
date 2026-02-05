@@ -39,6 +39,7 @@ import {
   Bell,
   Lock,
   ChevronDown,
+  ArrowDown,
   Download,
   MapPin,
   UserCircle,
@@ -830,7 +831,9 @@ export default function WhatsAppPage() {
   const [showDeleteChatConfirm, setShowDeleteChatConfirm] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [replyToMessage, setReplyToMessage] = useState<Message | null>(null);
+  const [showScrollButton, setShowScrollButton] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollViewportRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -1223,6 +1226,37 @@ export default function WhatsAppPage() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Check if user is near bottom of scroll area
+  const checkScrollPosition = useCallback(() => {
+    const viewport = scrollViewportRef.current;
+    if (viewport) {
+      const isNearBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 100;
+      setShowScrollButton(!isNearBottom);
+    }
+  }, []);
+
+  // Handle scroll event
+  const handleScrollEvent = useCallback(() => {
+    checkScrollPosition();
+  }, [checkScrollPosition]);
+
+  // Scroll to bottom function
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    setShowScrollButton(false);
+  };
+
+  // Check scroll position when messages change
+  useEffect(() => {
+    const viewport = scrollViewportRef.current;
+    if (viewport) {
+      viewport.addEventListener("scroll", handleScrollEvent);
+      // Check initial position
+      setTimeout(checkScrollPosition, 100);
+      return () => viewport.removeEventListener("scroll", handleScrollEvent);
+    }
+  }, [messages, handleScrollEvent, checkScrollPosition]);
 
   useEffect(() => {
     if (selectedChat && chats) {
@@ -1699,8 +1733,9 @@ export default function WhatsAppPage() {
                 </div>
               </div>
             )}
-            <ScrollArea 
-              className="h-full px-16 py-4"
+            <div 
+              ref={scrollViewportRef}
+              className="h-full px-16 py-4 overflow-y-auto"
               style={{ 
                 backgroundImage: `url(${chatBgPattern})`,
                 backgroundSize: "cover",
@@ -1726,7 +1761,7 @@ export default function WhatsAppPage() {
                           key={message.id} 
                           message={message}
                           onDelete={isAdminOrSupport ? () => deleteMessageMutation.mutate(message.id) : undefined}
-                          onReact={isAdminOrSupport && message.externalMessageId 
+                          onReact={isAdminOrSupport && message.externalMessageId
                             ? (emoji: string) => reactToMessageMutation.mutate({ messageId: message.id, emoji }) 
                             : undefined}
                           onReply={isAdminOrSupport ? () => setReplyToMessage(message) : undefined}
@@ -1740,7 +1775,21 @@ export default function WhatsAppPage() {
               ))}
               <div ref={messagesEndRef} />
             </div>
-          </ScrollArea>
+            </div>
+            
+            {/* Scroll to bottom button */}
+            {showScrollButton && (
+              <Button
+                size="icon"
+                variant="default"
+                onClick={scrollToBottom}
+                className="absolute bottom-4 right-8 z-20 rounded-full shadow-lg"
+                data-testid="button-scroll-to-bottom"
+                title="Scroll to bottom"
+              >
+                <ArrowDown className="h-5 w-5" />
+              </Button>
+            )}
           </div>
 
           {/* Input */}
