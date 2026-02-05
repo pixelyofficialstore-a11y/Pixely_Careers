@@ -806,6 +806,10 @@ function QuickReplyDropdown({
 export default function WhatsAppPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  
+  // Handle phone parameter from URL for order linking
+  const urlParams = new URLSearchParams(window.location.search);
+  const phoneFromUrl = urlParams.get('phone');
   const [search, setSearch] = useState("");
   const [selectedChat, setSelectedChat] = useState<ChatWithDetails | null>(null);
   const [messageText, setMessageText] = useState("");
@@ -897,6 +901,24 @@ export default function WhatsAppPage() {
     }
     previousUnreadRef.current = totalUnread;
   }, [chats]);
+  
+  // Auto-select chat when navigating from Orders page with phone parameter
+  useEffect(() => {
+    if (!phoneFromUrl || !chats || chats.length === 0) return;
+    
+    // Normalize the phone number for comparison
+    const normalizedPhone = phoneFromUrl.replace(/\D/g, '');
+    const matchingChat = chats.find(chat => {
+      const chatPhone = chat.clientPhone?.replace(/\D/g, '') || '';
+      return chatPhone === normalizedPhone || chatPhone.endsWith(normalizedPhone) || normalizedPhone.endsWith(chatPhone);
+    });
+    
+    if (matchingChat && (!selectedChat || selectedChat.id !== matchingChat.id)) {
+      setSelectedChat(matchingChat);
+      // Clear the URL parameter after selecting
+      window.history.replaceState({}, '', '/whatsapp');
+    }
+  }, [phoneFromUrl, chats]);
 
   const createChatMutation = useMutation({
     mutationFn: (data: { clientName: string; clientPhone?: string }) =>
@@ -1761,11 +1783,11 @@ export default function WhatsAppPage() {
                           key={message.id} 
                           message={message}
                           onDelete={isAdminOrSupport ? () => deleteMessageMutation.mutate(message.id) : undefined}
-                          onReact={isAdminOrSupport && message.externalMessageId
+                          onReact={message.externalMessageId
                             ? (emoji: string) => reactToMessageMutation.mutate({ messageId: message.id, emoji }) 
                             : undefined}
-                          onReply={isAdminOrSupport ? () => setReplyToMessage(message) : undefined}
-                          onForward={isAdminOrSupport ? () => setForwardingMessage(message) : undefined}
+                          onReply={() => setReplyToMessage(message)}
+                          onForward={() => setForwardingMessage(message)}
                           replyToMessage={replyMsg}
                         />
                       );
@@ -2013,9 +2035,13 @@ export default function WhatsAppPage() {
                   <Textarea
                     ref={inputRef}
                     placeholder="Type a message"
-                    className="border-0 text-whatsapp-text-primary bg-whatsapp-bg-input resize-none min-h-[40px] max-h-32 text-sm rounded-lg placeholder:text-whatsapp-text-secondary"
+                    className="border-0 text-whatsapp-text-primary bg-whatsapp-bg-input resize-none min-h-[44px] max-h-[200px] text-sm rounded-lg placeholder:text-whatsapp-text-secondary py-3 overflow-y-auto"
                     value={messageText}
-                    onChange={handleInputChange}
+                    onChange={(e) => {
+                      handleInputChange(e);
+                      e.target.style.height = 'auto';
+                      e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px';
+                    }}
                     onKeyDown={handleKeyDown}
                     rows={1}
                     data-testid="input-message"

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
@@ -89,6 +90,7 @@ const SERVICE_TYPES = [
 export default function OrdersPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
   const [search, setSearch] = useState("");
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth().toString());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString());
@@ -395,15 +397,15 @@ export default function OrdersPage() {
                             >
                               {copiedPhone === order.id ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
                             </Button>
-                            <a
-                              href={`https://wa.me/${order.clientPhone.replace(/\D/g, '')}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="h-6 w-6 flex items-center justify-center rounded-md text-green-500 hover:bg-green-500/10"
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 text-green-500 hover:bg-green-500/10"
+                              onClick={() => setLocation(`/whatsapp?phone=${encodeURIComponent(order.clientPhone!)}`)}
                               data-testid={`button-whatsapp-${order.id}`}
                             >
                               <Phone className="w-3 h-3" />
-                            </a>
+                            </Button>
                           </div>
                         ) : (
                           <span className="text-slate-500 text-sm">-</span>

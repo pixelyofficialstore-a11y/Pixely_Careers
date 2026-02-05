@@ -1892,8 +1892,8 @@ export async function registerRoutes(
     res.sendStatus(204);
   });
 
-  // Send a reaction to a message
-  app.post("/api/messages/:id/react", requireRole(["admin", "support"]), async (req, res) => {
+  // Send a reaction to a message (all authenticated users)
+  app.post("/api/messages/:id/react", requireAuth, async (req, res) => {
     const messageId = Number(req.params.id);
     const { emoji } = req.body;
     const user = req.user as User;
