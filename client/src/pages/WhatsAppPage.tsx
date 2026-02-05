@@ -654,7 +654,18 @@ export default function WhatsAppPage() {
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
+      
+      // Use audio/ogg or audio/mp4 for WhatsApp compatibility
+      // WhatsApp supports: audio/aac, audio/mp4, audio/mpeg, audio/amr, audio/ogg, audio/opus
+      let mimeType = 'audio/ogg;codecs=opus';
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = 'audio/webm;codecs=opus';
+        if (!MediaRecorder.isTypeSupported(mimeType)) {
+          mimeType = 'audio/webm';
+        }
+      }
+      
+      const mediaRecorder = new MediaRecorder(stream, { mimeType });
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
 
@@ -665,7 +676,9 @@ export default function WhatsAppPage() {
       };
 
       mediaRecorder.onstop = () => {
-        const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        // Use the actual mimeType from the recorder
+        const actualMimeType = mediaRecorder.mimeType || mimeType;
+        const blob = new Blob(audioChunksRef.current, { type: actualMimeType });
         setAudioBlob(blob);
         stream.getTracks().forEach(track => track.stop());
       };

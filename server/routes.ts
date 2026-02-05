@@ -653,6 +653,25 @@ export async function registerRoutes(
     }
   }
 
+  // Helper function to convert audio from webm to ogg using ffmpeg
+  async function convertAudioToOgg(inputPath: string): Promise<{ path: string; mimeType: string } | null> {
+    const { exec } = await import('child_process');
+    const { promisify } = await import('util');
+    const execAsync = promisify(exec);
+    
+    const outputPath = inputPath.replace(/\.webm$/, '.ogg');
+    
+    try {
+      // Convert webm to ogg using ffmpeg
+      await execAsync(`ffmpeg -i "${inputPath}" -acodec libopus -b:a 64k "${outputPath}" -y`);
+      console.log(`Converted audio: ${inputPath} -> ${outputPath}`);
+      return { path: outputPath, mimeType: 'audio/ogg' };
+    } catch (error) {
+      console.error("Failed to convert audio:", error);
+      return null;
+    }
+  }
+
   // Helper function to upload media to WhatsApp and get media ID
   async function uploadMediaToWhatsApp(filePath: string, mimeType: string, fileName?: string): Promise<string | null> {
     if (!WHATSAPP_PHONE_NUMBER_ID || !WHATSAPP_ACCESS_TOKEN) {
@@ -667,22 +686,39 @@ export async function registerRoutes(
         return null;
       }
 
+      let actualFilePath = filePath;
+      let actualMimeType = mimeType;
+      let actualFileName = fileName || path.basename(filePath);
+      
+      // Convert webm audio to ogg for WhatsApp compatibility
+      if (mimeType.includes('audio/webm')) {
+        console.log("Converting webm audio to ogg for WhatsApp compatibility...");
+        const converted = await convertAudioToOgg(filePath);
+        if (converted) {
+          actualFilePath = converted.path;
+          actualMimeType = converted.mimeType;
+          actualFileName = actualFileName.replace(/\.webm$/, '.ogg');
+        } else {
+          console.error("Audio conversion failed");
+          return null;
+        }
+      }
+
       // Read file as buffer for better compatibility
-      const fileBuffer = fs.readFileSync(filePath);
-      const actualFileName = fileName || path.basename(filePath);
+      const fileBuffer = fs.readFileSync(actualFilePath);
       
       // Create a Blob from the buffer
-      const fileBlob = new Blob([fileBuffer], { type: mimeType });
+      const fileBlob = new Blob([fileBuffer], { type: actualMimeType });
       
       // Use native FormData (available in Node 18+)
       const formData = new FormData();
       formData.append('file', fileBlob, actualFileName);
-      formData.append('type', mimeType);
+      formData.append('type', actualMimeType);
       formData.append('messaging_product', 'whatsapp');
 
       console.log("Uploading to WhatsApp API:", {
         url: `${WHATSAPP_API_URL}/${WHATSAPP_PHONE_NUMBER_ID}/media`,
-        mimeType,
+        mimeType: actualMimeType,
         fileName: actualFileName,
         fileSize: fileBuffer.length,
       });
