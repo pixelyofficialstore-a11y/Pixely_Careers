@@ -694,22 +694,23 @@ export async function registerRoutes(
     const { promisify } = await import('util');
     const execAsync = promisify(exec);
     
-    const outputPath = inputPath.replace(/\.webm$/, '.ogg');
+    // Convert to M4A/AAC for better iOS compatibility
+    // WhatsApp supports: audio/aac, audio/mp4, audio/mpeg, audio/amr, audio/ogg
+    const outputPath = inputPath.replace(/\.webm$/, '.m4a');
     
     try {
-      // Convert to OGG with Opus codec - WhatsApp compatible format for voice messages
-      // iOS-compatible parameters: mono audio, 48kHz sample rate, 32kbps bitrate
-      // Critical: -map_metadata -1 strips metadata that can cause iOS playback issues
-      // -vn removes video, -sn removes subtitles, -dn removes data streams
-      await execAsync(`ffmpeg -i "${inputPath}" -vn -sn -dn -map_metadata -1 -c:a libopus -b:a 32k -ac 1 -ar 48000 "${outputPath}" -y`);
-      console.log(`Converted audio: ${inputPath} -> ${outputPath}`);
+      // Convert to M4A with AAC codec - better iOS compatibility than OGG/Opus
+      // AAC is natively supported by iOS and works well with WhatsApp
+      // -vn removes video, -map_metadata -1 strips metadata
+      await execAsync(`ffmpeg -i "${inputPath}" -vn -map_metadata -1 -c:a aac -b:a 64k -ac 1 -ar 44100 "${outputPath}" -y`);
+      console.log(`Converted audio to M4A: ${inputPath} -> ${outputPath}`);
       
       // Verify output file exists and has content
       if (fs.existsSync(outputPath)) {
         const stats = fs.statSync(outputPath);
         console.log(`Converted file size: ${stats.size} bytes`);
         if (stats.size > 0) {
-          return { path: outputPath, mimeType: 'audio/ogg; codecs=opus' };
+          return { path: outputPath, mimeType: 'audio/mp4' };
         }
       }
       console.error("Converted audio file is empty or missing");
