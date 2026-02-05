@@ -301,7 +301,7 @@ function VoiceMessagePlayer({
           </span>
           <div className="flex items-center gap-1">
             <span className="text-[11px] text-whatsapp-text-secondary">
-              {formatTime(message.createdAt)}
+              {message.createdAt ? formatTime(message.createdAt) : ''}
             </span>
             {isOutgoing && getStatusIcon()}
           </div>
@@ -386,6 +386,17 @@ function MessageBubble({
         );
       }
 
+      if (isAudioFile(message.fileUrl, message.fileName, message.fileMeta)) {
+        return (
+          <VoiceMessagePlayer 
+            message={message} 
+            isOutgoing={isOutgoing} 
+            formatTime={formatTime}
+            getStatusIcon={getStatusIcon}
+          />
+        );
+      }
+
       if (isVideoFile(message.fileUrl, message.fileName, message.fileMeta)) {
         return (
           <div className="max-w-[280px]">
@@ -402,17 +413,6 @@ function MessageBubble({
               {getStatusIcon()}
             </div>
           </div>
-        );
-      }
-
-      if (isAudioFile(message.fileUrl, message.fileName, message.fileMeta)) {
-        return (
-          <VoiceMessagePlayer 
-            message={message} 
-            isOutgoing={isOutgoing} 
-            formatTime={formatTime}
-            getStatusIcon={getStatusIcon}
-          />
         );
       }
 
