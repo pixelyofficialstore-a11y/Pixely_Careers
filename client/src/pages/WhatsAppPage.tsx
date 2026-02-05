@@ -5,6 +5,8 @@ import { useAuth } from "@/hooks/use-auth";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
@@ -14,11 +16,11 @@ import {
 } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   Search,
   Send,
   MoreVertical,
-  ArrowLeft,
   Paperclip,
   Check,
   CheckCheck,
@@ -26,13 +28,8 @@ import {
   File,
   LinkIcon,
   ImageIcon,
-  CheckCircle,
   Smile,
-  RefreshCw,
-  MessageSquarePlus,
-  Filter,
   Mic,
-  MicOff,
   Play,
   Pause,
   Square,
@@ -40,8 +37,11 @@ import {
   Plus,
   Trash2,
   Star,
+  Bell,
+  Lock,
+  ChevronDown,
+  Download,
 } from "lucide-react";
-import { SiWhatsapp } from "react-icons/si";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -49,7 +49,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { format } from "date-fns";
+import { format, isToday, isYesterday, isSameDay } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Chat, Message, User, MessageShortcut, Order, Catalog } from "@shared/schema";
@@ -61,15 +61,17 @@ type ChatWithDetails = Chat & {
   assignee?: User | null;
 };
 
-const CHAT_TAGS = ["New", "Working", "Pending", "Changes", "Issues", "Satisfied Client"];
+type ChatTag = "New" | "Working" | "Pending" | "Changes" | "Issues" | "Satisfied Client";
 
-const TAG_COLORS: Record<string, { bg: string; text: string; hex: string }> = {
-  "New": { bg: "bg-blue-600", text: "text-white", hex: "#2563eb" },
-  "Working": { bg: "bg-purple-600", text: "text-white", hex: "#9333ea" },
-  "Pending": { bg: "bg-yellow-600", text: "text-white", hex: "#ca8a04" },
-  "Changes": { bg: "bg-orange-600", text: "text-white", hex: "#ea580c" },
-  "Issues": { bg: "bg-red-600", text: "text-white", hex: "#dc2626" },
-  "Satisfied Client": { bg: "bg-green-600", text: "text-white", hex: "#16a34a" },
+const CHAT_TAGS: ChatTag[] = ["New", "Working", "Pending", "Changes", "Issues", "Satisfied Client"];
+
+const TAG_CONFIG: Record<ChatTag, { label: string; bgClass: string }> = {
+  "New": { label: "New", bgClass: "bg-tag-new" },
+  "Working": { label: "Working", bgClass: "bg-tag-working" },
+  "Pending": { label: "Pending", bgClass: "bg-tag-pending" },
+  "Changes": { label: "Changes", bgClass: "bg-tag-pending" },
+  "Issues": { label: "Issues", bgClass: "bg-tag-issues" },
+  "Satisfied Client": { label: "Satisfied", bgClass: "bg-tag-satisfied" },
 };
 
 const AVATAR_COLORS = [
@@ -83,6 +85,324 @@ function getAvatarColor(name: string) {
   return AVATAR_COLORS[index];
 }
 
+function ChatListItem({ 
+  chat, 
+  isActive, 
+  onClick, 
+  showAssignee = true 
+}: { 
+  chat: ChatWithDetails; 
+  isActive: boolean; 
+  onClick: () => void;
+  showAssignee?: boolean;
+}) {
+  const tag = (chat.tags as string[] || [])[0] as ChatTag || "New";
+  const tagConfig = TAG_CONFIG[tag] || TAG_CONFIG["New"];
+  const displayName = chat.clientName && chat.clientName !== "New Lead" && chat.clientName.trim() !== "" 
+    ? chat.clientName 
+    : chat.clientPhone || "Unknown";
+
+  const formatTimestamp = (date: Date | string | null | undefined) => {
+    if (!date) return "";
+    const d = new Date(date);
+    if (isToday(d)) return format(d, "HH:mm");
+    if (isYesterday(d)) return "Yesterday";
+    return format(d, "dd/MM/yyyy");
+  };
+
+  const getMessagePreview = () => {
+    if (!chat.lastMessage) return "No messages yet";
+    const preview = chat.lastMessage;
+    if (preview.length > 40) return `${preview.substring(0, 40)}...`;
+    return preview;
+  };
+
+  return (
+    <div
+      onClick={onClick}
+      className={cn(
+        "flex items-center gap-3 px-3 py-3 cursor-pointer transition-colors border-b border-whatsapp-divider",
+        isActive ? "bg-whatsapp-active" : "hover:bg-whatsapp-hover"
+      )}
+      data-testid={`chat-item-${chat.id}`}
+    >
+      <div className="relative flex-shrink-0">
+        <Avatar className="h-12 w-12">
+          <AvatarFallback 
+            className="text-white font-medium"
+            style={{ backgroundColor: getAvatarColor(displayName) }}
+          >
+            {displayName.charAt(0).toUpperCase()}
+          </AvatarFallback>
+        </Avatar>
+        <div
+          className={cn(
+            "absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-whatsapp-bg-panel",
+            tagConfig.bgClass
+          )}
+        />
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <div className="flex justify-between items-start mb-1">
+          <span className="font-medium text-whatsapp-text-primary truncate">
+            {displayName}
+          </span>
+          <span className={cn(
+            "text-xs flex-shrink-0 ml-2",
+            chat.unreadCount && chat.unreadCount > 0 ? "text-whatsapp-unread" : "text-whatsapp-text-secondary"
+          )}>
+            {formatTimestamp(chat.lastMessageAt)}
+          </span>
+        </div>
+        
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1 text-sm text-whatsapp-text-secondary truncate flex-1 min-w-0">
+            <span className="truncate">{getMessagePreview()}</span>
+          </div>
+          
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {showAssignee && chat.assignee && (
+              <span className="text-xs text-whatsapp-teal truncate max-w-[60px]">
+                {chat.assignee.name?.split(" ")[0]}
+              </span>
+            )}
+            {chat.unreadCount && chat.unreadCount > 0 && (
+              <Badge 
+                className="h-5 min-w-[20px] flex items-center justify-center rounded-full bg-whatsapp-unread text-white text-xs font-medium px-1.5 no-default-hover-elevate no-default-active-elevate"
+              >
+                {chat.unreadCount}
+              </Badge>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MessageBubble({ 
+  message, 
+  onDelete 
+}: { 
+  message: Message; 
+  onDelete?: () => void;
+}) {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const isOutgoing = message.senderType === "user";
+
+  const formatTime = (date: Date | string | null) => {
+    if (!date) return "";
+    return format(new Date(date), "HH:mm");
+  };
+
+  const getStatusIcon = () => {
+    if (!isOutgoing) return null;
+    if (message.isRead) {
+      return <CheckCheck className="h-4 w-4 text-whatsapp-icon" />;
+    }
+    return <Check className="h-4 w-4 text-whatsapp-icon" />;
+  };
+
+  const toggleAudio = () => {
+    if (!audioRef.current) return;
+    if (isPlaying) {
+      audioRef.current.pause();
+    } else {
+      audioRef.current.play();
+    }
+    setIsPlaying(!isPlaying);
+  };
+
+  const isImageFile = (url: string | null, fileName: string | null, meta: any) => {
+    if (!url) return false;
+    if (meta?.type?.startsWith("image/")) return true;
+    if (fileName?.match(/\.(jpg|jpeg|png|gif|webp)$/i)) return true;
+    return false;
+  };
+
+  const isAudioFile = (url: string | null, fileName: string | null, meta: any) => {
+    if (!url) return false;
+    if (meta?.type?.startsWith("audio/")) return true;
+    if (fileName?.match(/\.(mp3|ogg|webm|wav|m4a)$/i)) return true;
+    return false;
+  };
+
+  const renderContent = () => {
+    if (message.messageType === "file" && message.fileUrl) {
+      if (isImageFile(message.fileUrl, message.fileName, message.fileMeta)) {
+        return (
+          <div className="max-w-[280px]">
+            <img
+              src={message.fileUrl}
+              alt="Shared image"
+              className="rounded-lg max-w-full h-auto"
+            />
+            <div className="flex items-center justify-end gap-1 mt-1">
+              <span className="text-xs text-whatsapp-text-secondary">
+                {formatTime(message.createdAt)}
+              </span>
+              {getStatusIcon()}
+            </div>
+          </div>
+        );
+      }
+
+      if (isAudioFile(message.fileUrl, message.fileName, message.fileMeta)) {
+        return (
+          <div className="flex items-center gap-3 min-w-[240px]">
+            <audio 
+              ref={audioRef} 
+              src={message.fileUrl} 
+              onEnded={() => setIsPlaying(false)}
+            />
+            <button 
+              onClick={toggleAudio}
+              className="h-10 w-10 rounded-full bg-whatsapp-green flex items-center justify-center flex-shrink-0"
+            >
+              {isPlaying ? (
+                <Pause className="h-5 w-5 text-white" />
+              ) : (
+                <Play className="h-5 w-5 text-white ml-0.5" />
+              )}
+            </button>
+            <div className="flex-1">
+              <div className="flex items-center gap-0.5 h-6">
+                {Array.from({ length: 30 }).map((_, i) => (
+                  <div
+                    key={i}
+                    className="w-1 bg-whatsapp-text-secondary rounded-full"
+                    style={{ height: `${Math.random() * 16 + 4}px` }}
+                  />
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-whatsapp-text-secondary">
+                {formatTime(message.createdAt)}
+              </span>
+              {getStatusIcon()}
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="flex items-center gap-3 min-w-[200px]">
+          <div className="h-12 w-12 rounded-lg bg-whatsapp-bg-dark flex items-center justify-center flex-shrink-0">
+            <File className="h-6 w-6 text-whatsapp-text-secondary" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm text-whatsapp-text-primary truncate">
+              {message.fileName || "Document"}
+            </div>
+          </div>
+          <a 
+            href={message.fileUrl}
+            download={message.fileName || undefined}
+            className="p-2 hover:bg-whatsapp-hover rounded-full transition-colors"
+          >
+            <Download className="h-5 w-5 text-whatsapp-icon" />
+          </a>
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-whatsapp-text-secondary">
+              {formatTime(message.createdAt)}
+            </span>
+            {getStatusIcon()}
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <>
+        <p className="text-sm whitespace-pre-wrap break-words">
+          {message.content}
+        </p>
+        <div className="flex items-center justify-end gap-1 mt-1">
+          <span className="text-xs text-whatsapp-text-secondary">
+            {formatTime(message.createdAt)}
+          </span>
+          {getStatusIcon()}
+        </div>
+      </>
+    );
+  };
+
+  return (
+    <div className={cn("flex group", isOutgoing ? "justify-end" : "justify-start")}>
+      <div
+        className={cn(
+          "max-w-[65%] px-3 py-2 rounded-lg relative",
+          isOutgoing
+            ? "bg-whatsapp-bubble-out text-white rounded-tr-none"
+            : "bg-whatsapp-bubble-in text-whatsapp-text-primary rounded-tl-none"
+        )}
+      >
+        {renderContent()}
+        {onDelete && (
+          <button
+            onClick={onDelete}
+            className="absolute -right-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-whatsapp-hover rounded"
+          >
+            <Trash2 className="h-4 w-4 text-red-400" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function QuickReplyDropdown({
+  isOpen,
+  searchQuery,
+  shortcuts,
+  onSelect,
+  selectedIndex,
+}: {
+  isOpen: boolean;
+  searchQuery: string;
+  shortcuts: MessageShortcut[];
+  onSelect: (shortcut: MessageShortcut) => void;
+  selectedIndex: number;
+}) {
+  if (!isOpen) return null;
+
+  const filteredReplies = shortcuts.filter(reply =>
+    reply.command.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  if (filteredReplies.length === 0) return null;
+
+  return (
+    <div className="absolute bottom-full left-0 right-0 mb-2 bg-whatsapp-bg-panel border border-whatsapp-divider rounded-lg shadow-xl overflow-hidden z-50">
+      <div className="px-3 py-2 border-b border-whatsapp-divider">
+        <span className="text-xs text-whatsapp-text-secondary">Quick Replies</span>
+      </div>
+      <div className="max-h-[240px] overflow-y-auto">
+        {filteredReplies.map((reply, index) => (
+          <div
+            key={reply.id}
+            onClick={() => onSelect(reply)}
+            className={cn(
+              "px-4 py-3 cursor-pointer transition-colors border-b border-whatsapp-divider last:border-0",
+              index === selectedIndex ? "bg-whatsapp-active" : "hover:bg-whatsapp-hover"
+            )}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-whatsapp-green font-mono text-sm">/{reply.command}</span>
+            </div>
+            <p className="text-xs text-whatsapp-text-secondary line-clamp-2">
+              {reply.content}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function WhatsAppPage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -90,12 +410,13 @@ export default function WhatsAppPage() {
   const [selectedChat, setSelectedChat] = useState<ChatWithDetails | null>(null);
   const [messageText, setMessageText] = useState("");
   const [showShortcuts, setShowShortcuts] = useState(false);
-  const [filterTag, setFilterTag] = useState<string | null>(null);
+  const [shortcutSearch, setShortcutSearch] = useState("");
+  const [selectedShortcutIndex, setSelectedShortcutIndex] = useState(0);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [showOrderPanel, setShowOrderPanel] = useState(false);
   const [showLinkOrderDialog, setShowLinkOrderDialog] = useState(false);
-  const [activeTab, setActiveTab] = useState<"all" | "new" | "assigned">("all");
-  const [designerFilter, setDesignerFilter] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState("all");
+  const [expandedDesigners, setExpandedDesigners] = useState<string[]>([]);
   const [showCreateChatDialog, setShowCreateChatDialog] = useState(false);
   const [newChatName, setNewChatName] = useState("");
   const [newChatPhone, setNewChatPhone] = useState("");
@@ -104,7 +425,7 @@ export default function WhatsAppPage() {
   const [recordingTime, setRecordingTime] = useState(0);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [showCatalogDialog, setShowCatalogDialog] = useState(false);
-  const [playingAudioId, setPlayingAudioId] = useState<number | null>(null);
+  const [showContactInfo, setShowContactInfo] = useState(false);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [renameChatName, setRenameChatName] = useState("");
   const [showDeleteChatConfirm, setShowDeleteChatConfirm] = useState(false);
@@ -118,6 +439,7 @@ export default function WhatsAppPage() {
   const isAdmin = user?.role === "admin";
   const isSupport = user?.role === "support";
   const isDesigner = user?.role === "designer";
+  const isAdminOrSupport = isAdmin || isSupport;
 
   const { data: chats, isLoading } = useQuery<ChatWithDetails[]>({
     queryKey: ["/api/chats"],
@@ -181,6 +503,7 @@ export default function WhatsAppPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
       setSelectedChat(null);
+      setShowContactInfo(false);
       toast({ title: "Deleted", description: "Chat deleted" });
     },
   });
@@ -188,7 +511,6 @@ export default function WhatsAppPage() {
   const sendVoiceWhatsAppMutation = useMutation({
     mutationFn: async ({ chatId, audioBlob }: { chatId: number; audioBlob: Blob }) => {
       const formData = new FormData();
-      // MediaRecorder creates webm with opus codec - WhatsApp accepts audio/webm
       const extension = audioBlob.type.includes("webm") ? "webm" : "ogg";
       formData.append("media", audioBlob, `voice_message.${extension}`);
       formData.append("mediaType", "audio");
@@ -228,7 +550,6 @@ export default function WhatsAppPage() {
           credentials: "include",
         }).then(res => res.json());
       }
-      // Send via WhatsApp API if chat has a phone number
       if (useWhatsApp) {
         return apiRequest("POST", `/api/chats/${chatId}/send-whatsapp`, { message: content });
       }
@@ -263,6 +584,23 @@ export default function WhatsAppPage() {
     },
   });
 
+  const markAsReadMutation = useMutation({
+    mutationFn: async (chatId: number) => {
+      return apiRequest("POST", `/api/chats/${chatId}/mark-read`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
+    },
+  });
+
+  const handleSelectChat = (chat: ChatWithDetails) => {
+    setSelectedChat(chat);
+    setShowContactInfo(false);
+    if (chat.unreadCount && chat.unreadCount > 0) {
+      markAsReadMutation.mutate(chat.id);
+    }
+  };
+
   const handleLinkOrder = (orderId: number) => {
     if (!selectedChat) return;
     updateChatMutation.mutate({
@@ -280,35 +618,13 @@ export default function WhatsAppPage() {
     });
   };
 
-  // Mark chat as read mutation
-  const markAsReadMutation = useMutation({
-    mutationFn: async (chatId: number) => {
-      return apiRequest("POST", `/api/chats/${chatId}/mark-read`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
-    },
-  });
-
-  // Function to select chat and mark as read
-  const handleSelectChat = (chat: ChatWithDetails) => {
-    setSelectedChat(chat);
-    // Mark as read if there are unread messages
-    if (chat.unreadCount && chat.unreadCount > 0) {
-      markAsReadMutation.mutate(chat.id);
-    }
-  };
-
-  // Common emojis for picker
   const emojiCategories = {
-    smileys: ["😀", "😃", "😄", "😁", "😅", "😂", "🤣", "😊", "😇", "🙂", "😉", "😌", "😍", "🥰", "😘", "😋", "😛", "🤔", "🤗", "🤭", "🥳", "😎", "🤩", "😏", "😒", "😞", "😔", "😟", "😕", "🙁", "😣", "😖", "😫", "😩", "🥺", "😢", "😭", "😤", "😠", "😡", "🤬", "😈", "👿", "💀", "☠️", "💩", "🤡", "👹", "👺", "👻", "👽", "👾", "🤖"],
-    gestures: ["👋", "🤚", "🖐️", "✋", "🖖", "👌", "🤌", "🤏", "✌️", "🤞", "🤟", "🤘", "🤙", "👈", "👉", "👆", "🖕", "👇", "☝️", "👍", "👎", "✊", "👊", "🤛", "🤜", "👏", "🙌", "👐", "🤲", "🤝", "🙏", "✍️", "💪", "🦾", "🦿"],
-    hearts: ["❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "❣️", "💕", "💞", "💓", "💗", "💖", "💘", "💝", "💟", "♥️", "💌", "💋", "👄"],
-    objects: ["📱", "💻", "⌨️", "🖥️", "🖨️", "📷", "📹", "🎥", "📞", "☎️", "📧", "📬", "📝", "📂", "📁", "📊", "📈", "📉", "🗓️", "📆", "📅", "⏰", "🕐", "💵", "💴", "💶", "💷", "💰", "💳", "🎁", "🎉", "🎊", "🎈", "✨", "🔥", "💯", "⭐", "🌟", "✅", "❌", "⚠️", "🚀"],
-    nature: ["🌸", "🌹", "🌺", "🌻", "🌼", "🌷", "🌱", "🌲", "🌳", "🌴", "🌵", "🌾", "🌿", "☘️", "🍀", "🍁", "🍂", "🍃", "🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐨", "🐯", "🦁", "🐮", "🐷"]
+    smileys: ["😀", "😃", "😄", "😁", "😅", "😂", "🤣", "😊", "😇", "🙂", "😉", "😌", "😍", "🥰", "😘", "😋", "😛", "🤔", "🤗", "🤭", "🥳", "😎", "🤩", "😏", "😒", "😞", "😔", "😟", "😕", "🙁", "😣", "😖", "😫", "😩", "🥺", "😢", "😭", "😤", "😠", "😡"],
+    gestures: ["👋", "🤚", "🖐️", "✋", "🖖", "👌", "🤌", "🤏", "✌️", "🤞", "🤟", "🤘", "🤙", "👈", "👉", "👆", "👇", "☝️", "👍", "👎", "✊", "👊", "🤛", "🤜", "👏", "🙌", "👐", "🤲", "🤝", "🙏"],
+    hearts: ["❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "❣️", "💕", "💞", "💓", "💗", "💖", "💘", "💝", "💟"],
+    objects: ["📱", "💻", "⌨️", "🖥️", "📷", "📹", "📞", "📧", "📝", "📂", "📁", "📊", "⏰", "💵", "💰", "💳", "🎁", "🎉", "✨", "🔥", "💯", "⭐", "✅", "❌", "⚠️", "🚀"],
   };
 
-  // Voice recording functions
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -323,8 +639,8 @@ export default function WhatsAppPage() {
       };
 
       mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
-        setAudioBlob(audioBlob);
+        const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        setAudioBlob(blob);
         stream.getTracks().forEach(track => track.stop());
       };
 
@@ -351,11 +667,9 @@ export default function WhatsAppPage() {
   };
 
   const cancelRecording = () => {
-    // Stop active recording if in progress
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
     }
-    // Clear recording state whether recording or ready to send
     setIsRecording(false);
     setAudioBlob(null);
     setRecordingTime(0);
@@ -368,14 +682,12 @@ export default function WhatsAppPage() {
   const sendVoiceMessage = useCallback(() => {
     if (!audioBlob || !selectedChat) return;
     
-    // Use WhatsApp API if chat has phone number
     if (selectedChat.clientPhone) {
       sendVoiceWhatsAppMutation.mutate({
         chatId: selectedChat.id,
         audioBlob: audioBlob,
       });
     } else {
-      // Fallback to regular file upload for internal chats
       const voiceFile = new (window as any).File([audioBlob], "voice_message.webm", { type: "audio/webm" }) as File;
       sendMessageMutation.mutate({ 
         chatId: selectedChat.id, 
@@ -413,7 +725,6 @@ export default function WhatsAppPage() {
 
   const handleSend = () => {
     if ((!messageText.trim() && !selectedFile) || !selectedChat) return;
-    // Use WhatsApp API if the chat has a phone number (real WhatsApp chat)
     const useWhatsApp = !!selectedChat.clientPhone;
     sendMessageMutation.mutate({ 
       chatId: selectedChat.id, 
@@ -432,19 +743,45 @@ export default function WhatsAppPage() {
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
     setMessageText(value);
-    setShowShortcuts(value.startsWith("/") || value.startsWith("//"));
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    } else if (e.key === "Escape") {
+    if (value.startsWith("/")) {
+      setShowShortcuts(true);
+      setShortcutSearch(value.slice(1));
+      setSelectedShortcutIndex(0);
+    } else {
       setShowShortcuts(false);
+      setShortcutSearch("");
     }
   };
 
-  const handleAssign = (designerId: number) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (showShortcuts && shortcuts) {
+      const filteredReplies = shortcuts.filter(reply =>
+        reply.command.toLowerCase().includes(shortcutSearch.toLowerCase())
+      );
+
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelectedShortcutIndex(prev => 
+          prev < filteredReplies.length - 1 ? prev + 1 : 0
+        );
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedShortcutIndex(prev => 
+          prev > 0 ? prev - 1 : filteredReplies.length - 1
+        );
+      } else if (e.key === "Enter" && filteredReplies.length > 0) {
+        e.preventDefault();
+        handleShortcut(filteredReplies[selectedShortcutIndex]);
+      } else if (e.key === "Escape") {
+        setShowShortcuts(false);
+      }
+    } else if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  const handleAssign = (designerId: number | null) => {
     if (!selectedChat) return;
     updateChatMutation.mutate({ 
       id: selectedChat.id, 
@@ -478,86 +815,149 @@ export default function WhatsAppPage() {
     }
   };
 
-  const getDisplayName = (chat: ChatWithDetails) => {
-    if (chat.clientName && chat.clientName !== "New Lead" && chat.clientName.trim() !== "") {
-      return chat.clientName;
-    }
-    return chat.clientPhone || "Unknown";
+  const toggleDesigner = (designerId: string) => {
+    setExpandedDesigners(prev => 
+      prev.includes(designerId) 
+        ? prev.filter(id => id !== designerId)
+        : [...prev, designerId]
+    );
   };
 
-  const filteredChats = chats?.filter(chat => {
-    if (chat.isInternal) return false;
-    if (isDesigner && chat.assignedToId !== user?.id) return false;
-    if (filterTag && !(chat.tags as string[] || []).includes(filterTag)) return false;
-    
-    // Tab filtering
-    if (activeTab === "new" && !(chat.tags as string[] || []).includes("New")) return false;
-    if (activeTab === "assigned") {
-      if (!chat.assignedToId) return false;
-      if (designerFilter && chat.assignedToId !== designerFilter) return false;
-    }
-    
-    if (search) {
-      const name = getDisplayName(chat).toLowerCase();
-      return name.includes(search.toLowerCase()) || chat.clientPhone?.includes(search);
-    }
-    return true;
-  });
+  const getChatsByDesigner = (designerId: number) => {
+    return (chats || [])
+      .filter(chat => !chat.isInternal && chat.assignedToId === designerId)
+      .sort((a, b) => {
+        const aTime = new Date(a.lastMessageAt || a.createdAt || 0).getTime();
+        const bTime = new Date(b.lastMessageAt || b.createdAt || 0).getTime();
+        return bTime - aTime;
+      });
+  };
 
-  const filteredShortcuts = shortcuts?.filter(s => {
-    const searchTerm = messageText.replace(/^\/+/, "").toLowerCase();
-    return s.command.toLowerCase().includes(searchTerm);
+  const getFilteredChats = () => {
+    let filtered = (chats || []).filter(chat => !chat.isInternal);
+
+    if (isDesigner) {
+      filtered = filtered.filter(chat => 
+        chat.assignedToId === user?.id || (chat.tags as string[] || []).includes("New")
+      );
+    }
+
+    if (search) {
+      const query = search.toLowerCase();
+      filtered = filtered.filter(chat => {
+        const name = chat.clientName?.toLowerCase() || "";
+        const phone = chat.clientPhone?.toLowerCase() || "";
+        return name.includes(query) || phone.includes(query);
+      });
+    }
+
+    switch (activeTab) {
+      case "new":
+        filtered = filtered.filter(chat => (chat.tags as string[] || []).includes("New"));
+        break;
+      case "designer":
+        break;
+    }
+
+    return filtered.sort((a, b) => {
+      const aTime = new Date(a.lastMessageAt || a.createdAt || 0).getTime();
+      const bTime = new Date(b.lastMessageAt || b.createdAt || 0).getTime();
+      return bTime - aTime;
+    });
+  };
+
+  const filteredChats = getFilteredChats();
+
+  const getDateLabel = (date: Date | string | null) => {
+    if (!date) return "Unknown";
+    const d = new Date(date);
+    if (isToday(d)) return "Today";
+    if (isYesterday(d)) return "Yesterday";
+    return format(d, "dd/MM/yyyy");
+  };
+
+  const groupedMessages: { date: Date; messages: Message[] }[] = [];
+  (messages || []).forEach(message => {
+    const lastGroup = groupedMessages[groupedMessages.length - 1];
+    const msgDate = message.createdAt ? new Date(message.createdAt) : new Date();
+    if (lastGroup && isSameDay(lastGroup.date, msgDate)) {
+      lastGroup.messages.push(message);
+    } else {
+      groupedMessages.push({
+        date: msgDate,
+        messages: [message],
+      });
+    }
   });
 
   if (isLoading) return null;
 
+  const displayName = selectedChat 
+    ? (selectedChat.clientName && selectedChat.clientName !== "New Lead" && selectedChat.clientName.trim() !== "" 
+        ? selectedChat.clientName 
+        : selectedChat.clientPhone || "Unknown")
+    : "";
+
+  const currentTag = selectedChat ? ((selectedChat.tags as string[] || [])[0] as ChatTag || "New") : "New";
+  const canEditTag = isAdmin || isSupport || 
+    (isDesigner && selectedChat?.assignedToId === user?.id);
+  const canAssign = isAdmin || isSupport;
+
+  const sharedImages = (messages || []).filter(m => 
+    m.messageType === "file" && m.fileUrl && m.fileMeta && 
+    (m.fileMeta as any)?.type?.startsWith("image/")
+  );
+  const sharedFiles = (messages || []).filter(m => 
+    m.messageType === "file" && m.fileUrl && 
+    !(m.fileMeta as any)?.type?.startsWith("image/") && 
+    !(m.fileMeta as any)?.type?.startsWith("audio/")
+  );
+
   return (
-    <div className="flex h-screen w-full" style={{ backgroundColor: "#0b141a" }}>
+    <div className="flex h-screen w-full bg-whatsapp-bg-dark">
       {/* Left Sidebar - Chat List */}
-      <div 
-        className="w-[420px] min-w-[300px] max-w-[420px] flex flex-col border-r"
-        style={{ backgroundColor: "#111b21", borderColor: "#222d34" }}
-      >
+      <div className="w-[400px] flex-shrink-0 flex flex-col h-full bg-whatsapp-bg-panel border-r border-whatsapp-divider">
         {/* Header */}
-        <div 
-          className="h-14 px-4 flex items-center justify-between"
-          style={{ backgroundColor: "#202c33" }}
-        >
-          <div className="flex items-center gap-3">
-            <div 
-              className="w-10 h-10 rounded-full flex items-center justify-center"
-              style={{ backgroundColor: "#2a3942" }}
+        <div className="flex items-center justify-between px-4 py-3 bg-whatsapp-header">
+          <Avatar className="h-10 w-10 cursor-pointer">
+            <AvatarFallback 
+              className="text-white font-medium"
+              style={{ backgroundColor: getAvatarColor(user?.name || "U") }}
             >
-              <span className="text-slate-300 font-medium">
-                {user?.name?.charAt(0) || "U"}
-              </span>
-            </div>
-          </div>
+              {user?.name?.charAt(0) || "U"}
+            </AvatarFallback>
+          </Avatar>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" className="text-slate-400 hover:bg-white/5" data-testid="button-refresh">
-              <RefreshCw className="w-5 h-5" />
-            </Button>
-            <Button variant="ghost" size="icon" className="text-slate-400 hover:bg-white/5" data-testid="button-new-chat">
-              <MessageSquarePlus className="w-5 h-5" />
-            </Button>
+            {isAdminOrSupport && (
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={() => setShowCreateChatDialog(true)}
+                className="text-whatsapp-icon hover:text-whatsapp-text-primary hover:bg-whatsapp-hover"
+                data-testid="button-create-chat"
+              >
+                <Plus className="h-5 w-5" />
+              </Button>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="text-slate-400 hover:bg-white/5" data-testid="button-menu">
-                  <MoreVertical className="w-5 h-5" />
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="text-whatsapp-icon hover:text-whatsapp-text-primary hover:bg-whatsapp-hover"
+                  data-testid="button-menu"
+                >
+                  <MoreVertical className="h-5 w-5" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent 
                 align="end" 
-                className="w-56"
-                style={{ backgroundColor: "#233138", borderColor: "#233138" }}
+                className="w-56 bg-whatsapp-bg-panel border-whatsapp-divider"
               >
-                <DropdownMenuItem className="text-slate-200 hover:bg-white/5 cursor-pointer">
-                  New group
-                </DropdownMenuItem>
-                <DropdownMenuItem className="text-slate-200 hover:bg-white/5 cursor-pointer">
+                <DropdownMenuItem className="text-whatsapp-text-primary hover:bg-whatsapp-hover cursor-pointer">
                   Starred messages
                 </DropdownMenuItem>
-                <DropdownMenuItem className="text-slate-200 hover:bg-white/5 cursor-pointer">
+                <DropdownMenuItem className="text-whatsapp-text-primary hover:bg-whatsapp-hover cursor-pointer">
                   Settings
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -565,767 +965,695 @@ export default function WhatsAppPage() {
           </div>
         </div>
 
-        {/* Search and Create */}
-        <div className="px-3 py-2 flex gap-2" style={{ backgroundColor: "#111b21" }}>
-          <div 
-            className="flex-1 flex items-center gap-4 px-3 py-2 rounded-lg"
-            style={{ backgroundColor: "#202c33" }}
-          >
-            <Search className="w-4 h-4 text-slate-500" />
-            <input
-              type="text"
-              placeholder="Search or start a new chat"
-              className="flex-1 bg-transparent text-sm text-slate-200 placeholder:text-slate-500 outline-none"
+        {/* Search */}
+        <div className="px-3 py-2">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-whatsapp-icon" />
+            <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search or start new chat"
+              className="pl-10 bg-whatsapp-bg-input border-0 text-whatsapp-text-primary placeholder:text-whatsapp-text-secondary rounded-lg h-9"
               data-testid="input-search-chats"
             />
           </div>
-          {(isAdmin || isSupport) && (
-            <Button
-              size="icon"
-              onClick={() => setShowCreateChatDialog(true)}
-              className="bg-[#00a884] hover:bg-[#00a884]/90 text-white"
-              data-testid="button-create-chat"
-            >
-              <Plus className="w-5 h-5" />
-            </Button>
-          )}
         </div>
 
-        {/* Tab Filters */}
-        <div className="px-3 py-2 flex gap-2" style={{ backgroundColor: "#111b21" }}>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setActiveTab("all")}
-            className={cn(
-              "rounded-full text-xs px-4",
-              activeTab === "all" 
-                ? "bg-[#00a884] text-white hover:bg-[#00a884]" 
-                : "bg-[#202c33] text-slate-300 hover:bg-[#2a3942]"
-            )}
-            data-testid="tab-all"
-          >
-            All
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setActiveTab("new")}
-            className={cn(
-              "rounded-full text-xs px-4",
-              activeTab === "new" 
-                ? "bg-[#00a884] text-white hover:bg-[#00a884]" 
-                : "bg-[#202c33] text-slate-300 hover:bg-[#2a3942]"
-            )}
-            data-testid="tab-new"
-          >
-            New
-          </Button>
-          {(isAdmin || isSupport) && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setActiveTab("assigned");
-                if (!designerFilter && designers.length > 0) {
-                  setDesignerFilter(designers[0].id);
-                }
-              }}
-              className={cn(
-                "rounded-full text-xs px-4",
-                activeTab === "assigned" 
-                  ? "bg-[#00a884] text-white hover:bg-[#00a884]" 
-                  : "bg-[#202c33] text-slate-300 hover:bg-[#2a3942]"
+        {/* Filter Tabs */}
+        <div className="px-2 py-1">
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="w-full bg-transparent gap-1 h-auto p-0">
+              {isAdminOrSupport ? (
+                <>
+                  <TabsTrigger 
+                    value="all"
+                    className="flex-1 px-3 py-1.5 text-xs rounded-full data-[state=active]:bg-whatsapp-green data-[state=active]:text-white bg-whatsapp-bg-input text-whatsapp-text-secondary"
+                    data-testid="tab-all"
+                  >
+                    All
+                  </TabsTrigger>
+                  <TabsTrigger 
+                    value="new"
+                    className="flex-1 px-3 py-1.5 text-xs rounded-full data-[state=active]:bg-whatsapp-green data-[state=active]:text-white bg-whatsapp-bg-input text-whatsapp-text-secondary"
+                    data-testid="tab-new"
+                  >
+                    New
+                  </TabsTrigger>
+                  <TabsTrigger 
+                    value="designer"
+                    className="flex-1 px-3 py-1.5 text-xs rounded-full data-[state=active]:bg-whatsapp-green data-[state=active]:text-white bg-whatsapp-bg-input text-whatsapp-text-secondary"
+                    data-testid="tab-designer"
+                  >
+                    By Designer
+                  </TabsTrigger>
+                </>
+              ) : (
+                <>
+                  <TabsTrigger 
+                    value="all"
+                    className="flex-1 px-3 py-1.5 text-xs rounded-full data-[state=active]:bg-whatsapp-green data-[state=active]:text-white bg-whatsapp-bg-input text-whatsapp-text-secondary"
+                    data-testid="tab-my"
+                  >
+                    My Chats
+                  </TabsTrigger>
+                  <TabsTrigger 
+                    value="new"
+                    className="flex-1 px-3 py-1.5 text-xs rounded-full data-[state=active]:bg-whatsapp-green data-[state=active]:text-white bg-whatsapp-bg-input text-whatsapp-text-secondary"
+                    data-testid="tab-new"
+                  >
+                    New
+                  </TabsTrigger>
+                </>
               )}
-              data-testid="tab-assigned"
-            >
-              By Designer
-            </Button>
-          )}
-          {activeTab === "assigned" && (isAdmin || isSupport) && (
-            <Select
-              value={designerFilter?.toString() || "all"}
-              onValueChange={(val) => setDesignerFilter(val && val !== "all" ? Number(val) : null)}
-            >
-              <SelectTrigger 
-                className="w-36 h-8 text-xs border-none"
-                style={{ backgroundColor: "#202c33" }}
-                data-testid="select-designer-filter"
-              >
-                <SelectValue placeholder="All Designers" />
-              </SelectTrigger>
-              <SelectContent style={{ backgroundColor: "#202c33" }}>
-                <SelectItem value="all">All Designers</SelectItem>
-                {designers.map(d => (
-                  <SelectItem key={d.id} value={d.id.toString()}>
-                    {d.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button 
-                variant="ghost"
-                size="icon"
-                className={cn(
-                  "ml-auto hover:bg-white/5",
-                  filterTag ? "text-green-500" : "text-slate-400"
-                )}
-                data-testid="button-filter-tags"
-              >
-                <Filter className="w-4 h-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent 
-              align="end"
-              style={{ backgroundColor: "#233138", borderColor: "#233138" }}
-            >
-              <DropdownMenuItem 
-                className={cn(
-                  "text-slate-200 hover:bg-white/5 cursor-pointer",
-                  !filterTag && "bg-white/10"
-                )}
-                onClick={() => setFilterTag(null)}
-              >
-                All Tags
-              </DropdownMenuItem>
-              <DropdownMenuSeparator style={{ backgroundColor: "#2a3942" }} />
-              {CHAT_TAGS.map(tag => (
-                <DropdownMenuItem
-                  key={tag}
-                  className={cn(
-                    "text-slate-200 hover:bg-white/5 cursor-pointer flex items-center gap-2",
-                    filterTag === tag && "bg-white/10"
-                  )}
-                  onClick={() => setFilterTag(filterTag === tag ? null : tag)}
-                  data-testid={`filter-tag-${tag.toLowerCase().replace(/\s+/g, "-")}`}
-                >
-                  <span 
-                    className="w-2 h-2 rounded-full"
-                    style={{ backgroundColor: TAG_COLORS[tag]?.hex }}
-                  />
-                  {tag}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+            </TabsList>
+          </Tabs>
         </div>
 
         {/* Chat List */}
         <ScrollArea className="flex-1">
-          <div className="py-1">
-            {filteredChats?.map(chat => {
-              const displayName = getDisplayName(chat);
-              const isSelected = selectedChat?.id === chat.id;
-              const unreadCount = chat.unreadCount || 0;
-              const primaryTag = (chat.tags as string[] || [])[0];
-              const assignedDesigner = teamMembers?.find(u => u.id === chat.assignedToId);
-              
-              return (
-                <button
-                  key={chat.id}
-                  onClick={() => handleSelectChat(chat)}
-                  className={cn(
-                    "w-full flex items-center gap-3 px-3 py-3 hover:bg-white/5 transition-colors",
-                    isSelected && "bg-white/10"
-                  )}
-                  style={{ borderBottom: "1px solid #222d34" }}
-                  data-testid={`chat-item-${chat.id}`}
-                >
-                  {/* Avatar with assignment indicator */}
-                  <div className="relative flex-shrink-0">
-                    <div 
-                      className="w-12 h-12 rounded-full flex items-center justify-center text-white font-medium text-lg"
-                      style={{ backgroundColor: getAvatarColor(displayName) }}
-                    >
-                      {displayName.charAt(0).toUpperCase()}
-                    </div>
-                    {assignedDesigner && (
-                      <div 
-                        className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold border-2"
-                        style={{ 
-                          backgroundColor: getAvatarColor(assignedDesigner.name),
-                          borderColor: "#111b21"
-                        }}
-                        title={`Assigned to ${assignedDesigner.name}`}
-                      >
-                        {assignedDesigner.name.charAt(0).toUpperCase()}
-                      </div>
-                    )}
-                  </div>
-                  
-                  {/* Content */}
-                  <div className="flex-1 min-w-0 text-left">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-white font-normal text-base truncate">
-                          {displayName}
-                        </span>
-                        {assignedDesigner && (isAdmin || isSupport) && (
-                          <span className="text-[10px] text-slate-500 flex-shrink-0">
-                            {assignedDesigner.name}
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-xs text-slate-500 flex-shrink-0">
-                        {chat.lastMessageAt ? format(new Date(chat.lastMessageAt), "HH:mm") : ""}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <div className="flex items-center gap-1 min-w-0 flex-1 overflow-hidden">
-                        <CheckCheck className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                        {chat.lastMessage?.includes(".pdf") || chat.lastMessage?.includes(".doc") ? (
-                          <div className="flex items-center gap-1 text-sm text-slate-400 truncate">
-                            <File className="w-3 h-3 flex-shrink-0" />
-                            <span className="truncate">{chat.lastMessage}</span>
+          {activeTab === "designer" && isAdminOrSupport ? (
+            <div className="py-1">
+              {designers.map(designer => {
+                const designerChats = getChatsByDesigner(designer.id);
+                const isExpanded = expandedDesigners.includes(String(designer.id));
+                
+                return (
+                  <Collapsible 
+                    key={designer.id} 
+                    open={isExpanded}
+                    onOpenChange={() => toggleDesigner(String(designer.id))}
+                  >
+                    <CollapsibleTrigger className="w-full">
+                      <div className="flex items-center gap-3 px-4 py-3 hover:bg-whatsapp-hover transition-colors">
+                        <Avatar className="h-10 w-10">
+                          <AvatarFallback className="bg-whatsapp-green text-white">
+                            {designer.name?.charAt(0) || "D"}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 text-left">
+                          <div className="text-whatsapp-text-primary font-medium">
+                            {designer.name}
                           </div>
-                        ) : (
-                          <span className="text-sm text-slate-400 truncate block max-w-full" style={{ 
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                            maxWidth: "180px"
-                          }}>
-                            {chat.lastMessage || "No messages"}
-                          </span>
-                        )}
+                          <div className="text-xs text-whatsapp-text-secondary">
+                            {designerChats.length} chats
+                          </div>
+                        </div>
+                        <ChevronDown className={cn(
+                          "h-4 w-4 text-whatsapp-icon transition-transform",
+                          isExpanded && "rotate-180"
+                        )} />
                       </div>
-                      <div className="flex items-center gap-1.5 flex-shrink-0 ml-auto">
-                        {primaryTag && (
-                          <span 
-                            className={cn(
-                              "text-[10px] px-1.5 py-0.5 rounded font-medium whitespace-nowrap",
-                              TAG_COLORS[primaryTag]?.bg,
-                              TAG_COLORS[primaryTag]?.text
-                            )}
-                          >
-                            {primaryTag}
-                          </span>
-                        )}
-                        {unreadCount > 0 && (
-                          <span 
-                            className="min-w-[20px] h-5 px-1.5 rounded-full flex items-center justify-center text-xs font-medium text-white"
-                            style={{ backgroundColor: "#00a884" }}
-                          >
-                            {unreadCount}
-                          </span>
-                        )}
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <div className="pl-4">
+                        {designerChats.map(chat => (
+                          <ChatListItem
+                            key={chat.id}
+                            chat={chat}
+                            isActive={selectedChat?.id === chat.id}
+                            onClick={() => handleSelectChat(chat)}
+                            showAssignee={false}
+                          />
+                        ))}
                       </div>
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-            {(!filteredChats || filteredChats.length === 0) && (
-              <div className="text-center py-12">
-                <p className="text-slate-500">No chats found</p>
-              </div>
-            )}
-          </div>
+                    </CollapsibleContent>
+                  </Collapsible>
+                );
+              })}
+            </div>
+          ) : (
+            <div>
+              {filteredChats.length === 0 ? (
+                <div className="text-center py-8 text-whatsapp-text-secondary">
+                  No chats found
+                </div>
+              ) : (
+                filteredChats.map(chat => (
+                  <ChatListItem
+                    key={chat.id}
+                    chat={chat}
+                    isActive={selectedChat?.id === chat.id}
+                    onClick={() => handleSelectChat(chat)}
+                    showAssignee={isAdminOrSupport}
+                  />
+                ))
+              )}
+            </div>
+          )}
         </ScrollArea>
       </div>
 
-      {/* Right Panel */}
-      <div className="flex-1 flex flex-col min-w-0" style={{ backgroundColor: "#0b141a" }}>
-        {selectedChat ? (
-          <>
-            {/* Chat Header */}
-            <div 
-              className="h-14 px-4 flex items-center justify-between"
-              style={{ backgroundColor: "#202c33" }}
-            >
-              <div className="flex items-center gap-3">
-                <div 
-                  className="w-10 h-10 rounded-full flex items-center justify-center text-white font-medium"
-                  style={{ backgroundColor: getAvatarColor(getDisplayName(selectedChat)) }}
+      {/* Center - Conversation View */}
+      {selectedChat ? (
+        <div className="flex-1 flex flex-col bg-whatsapp-bg-chat min-w-0">
+          {/* Header */}
+          <div 
+            onClick={() => setShowContactInfo(!showContactInfo)}
+            className="flex items-center justify-between px-4 py-2.5 bg-whatsapp-header cursor-pointer"
+          >
+            <div className="flex items-center gap-3">
+              <Avatar className="h-10 w-10">
+                <AvatarFallback 
+                  className="text-white font-medium"
+                  style={{ backgroundColor: getAvatarColor(displayName) }}
                 >
-                  {getDisplayName(selectedChat).charAt(0).toUpperCase()}
+                  {displayName.charAt(0).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              <div>
+                <h3 className="font-medium text-whatsapp-text-primary">
+                  {displayName}
+                </h3>
+                {selectedChat.clientPhone && (
+                  <p className="text-xs text-whatsapp-text-secondary">
+                    {selectedChat.clientPhone}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              <button className="text-whatsapp-icon hover:text-whatsapp-text-primary transition-colors">
+                <Search className="h-5 w-5" />
+              </button>
+              <button className="text-whatsapp-icon hover:text-whatsapp-text-primary transition-colors">
+                <MoreVertical className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Messages */}
+          <ScrollArea 
+            className="flex-1 px-16 py-4"
+            style={{ 
+              backgroundImage: `url(${chatBgPattern})`,
+              backgroundSize: "cover",
+              backgroundPosition: "center"
+            }}
+          >
+            <div className="space-y-4">
+              {groupedMessages.map((group, groupIndex) => (
+                <div key={groupIndex}>
+                  <div className="flex justify-center mb-4">
+                    <span className="px-3 py-1 bg-whatsapp-bubble-in text-whatsapp-text-secondary text-xs rounded-lg">
+                      {getDateLabel(group.date)}
+                    </span>
+                  </div>
+                  
+                  <div className="space-y-1">
+                    {group.messages.map(message => (
+                      <MessageBubble 
+                        key={message.id} 
+                        message={message}
+                        onDelete={isAdminOrSupport ? () => deleteMessageMutation.mutate(message.id) : undefined}
+                      />
+                    ))}
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-white font-medium">{getDisplayName(selectedChat)}</h3>
-                  <p className="text-xs text-slate-400">{selectedChat.clientPhone}</p>
+              ))}
+              <div ref={messagesEndRef} />
+            </div>
+          </ScrollArea>
+
+          {/* Input */}
+          <div className="relative px-4 py-3 bg-whatsapp-header">
+            <QuickReplyDropdown
+              isOpen={showShortcuts}
+              searchQuery={shortcutSearch}
+              shortcuts={shortcuts || []}
+              onSelect={handleShortcut}
+              selectedIndex={selectedShortcutIndex}
+            />
+
+            {selectedFile && (
+              <div className="mb-2 p-2 rounded-lg flex items-center gap-2 max-w-xs bg-whatsapp-bg-input">
+                {selectedFile.type.startsWith("image/") ? (
+                  <ImageIcon className="w-5 h-5 text-whatsapp-icon" />
+                ) : (
+                  <File className="w-5 h-5 text-whatsapp-icon" />
+                )}
+                <span className="text-sm text-whatsapp-text-primary truncate flex-1">{selectedFile.name}</span>
+                <button 
+                  className="p-1 hover:bg-whatsapp-hover rounded"
+                  onClick={() => setSelectedFile(null)}
+                >
+                  <X className="w-4 h-4 text-whatsapp-icon" />
+                </button>
+              </div>
+            )}
+
+            {showEmojiPicker && (
+              <div className="absolute bottom-20 left-4 rounded-lg border shadow-xl z-50 p-3 bg-whatsapp-bg-panel border-whatsapp-divider">
+                <div className="flex gap-2 mb-2 border-b pb-2 border-whatsapp-divider">
+                  {Object.keys(emojiCategories).map(cat => (
+                    <button
+                      key={cat}
+                      className="text-xs px-2 py-1 rounded text-whatsapp-text-secondary hover:bg-whatsapp-hover capitalize"
+                    >
+                      {cat === "smileys" ? "😀" : cat === "gestures" ? "👋" : cat === "hearts" ? "❤️" : "📱"}
+                    </button>
+                  ))}
+                </div>
+                <div className="grid grid-cols-8 gap-1 max-h-48 overflow-y-auto">
+                  {Object.values(emojiCategories).flat().map((emoji, idx) => (
+                    <button
+                      key={idx}
+                      className="text-xl p-1 hover:bg-whatsapp-hover rounded"
+                      onClick={() => {
+                        insertEmoji(emoji);
+                        setShowEmojiPicker(false);
+                      }}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
                 </div>
               </div>
-              
-              <div className="flex items-center gap-1">
-                {(isAdmin || isSupport) && (
-                  <Select
-                    value={selectedChat.assignedToId?.toString() || ""}
-                    onValueChange={(val) => handleAssign(Number(val))}
+            )}
+
+            {isRecording || audioBlob ? (
+              <div className="flex items-center gap-3 w-full">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={cancelRecording}
+                  className="text-red-400 hover:bg-whatsapp-hover"
+                  data-testid="button-cancel-recording"
+                >
+                  <Trash2 className="w-5 h-5" />
+                </Button>
+                
+                <div className="flex-1 flex items-center gap-3 px-4 py-2 rounded-lg bg-whatsapp-bg-input">
+                  {isRecording ? (
+                    <>
+                      <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse" />
+                      <span className="text-white text-sm">{formatRecordingTime(recordingTime)}</span>
+                      <div className="flex-1 h-1 bg-white/20 rounded-full overflow-hidden">
+                        <div className="h-full bg-red-500 w-full animate-pulse" />
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <Mic className="w-5 h-5 text-whatsapp-green" />
+                      <span className="text-white text-sm">{formatRecordingTime(recordingTime)}</span>
+                      <span className="text-whatsapp-text-secondary text-sm">Voice message ready</span>
+                    </>
+                  )}
+                </div>
+
+                {isRecording ? (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={stopRecording}
+                    className="text-white bg-red-500 hover:bg-red-600 rounded-full"
+                    data-testid="button-stop-recording"
                   >
-                    <SelectTrigger 
-                      className="w-auto h-8 border-0 text-slate-300 text-xs gap-1 px-2"
-                      style={{ backgroundColor: "#2a3942" }}
+                    <Square className="w-4 h-4" />
+                  </Button>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={sendVoiceMessage}
+                    className="text-white bg-whatsapp-green hover:bg-whatsapp-green-dark rounded-full"
+                    data-testid="button-send-voice"
+                  >
+                    <Send className="w-5 h-5" />
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-end gap-2">
+                <Button 
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                  className={cn("text-whatsapp-icon hover:bg-whatsapp-hover", showEmojiPicker && "text-whatsapp-green")}
+                  data-testid="button-emoji"
+                >
+                  <Smile className="w-6 h-6" />
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  onChange={handleFileSelect}
+                  accept="image/*,.pdf,.doc,.docx"
+                  data-testid="input-file-upload"
+                />
+                <Button 
+                  variant="ghost"
+                  size="icon"
+                  className="text-whatsapp-icon hover:bg-whatsapp-hover"
+                  onClick={() => fileInputRef.current?.click()}
+                  data-testid="button-attach-file"
+                >
+                  <Paperclip className="w-6 h-6" />
+                </Button>
+                <Button 
+                  variant="ghost"
+                  size="icon"
+                  className="text-whatsapp-icon hover:bg-whatsapp-hover"
+                  onClick={() => setShowCatalogDialog(true)}
+                  data-testid="button-catalog"
+                >
+                  <Package className="w-6 h-6" />
+                </Button>
+                <div className="flex-1">
+                  <Textarea
+                    ref={inputRef}
+                    placeholder="Type a message"
+                    className="border-0 text-whatsapp-text-primary bg-whatsapp-bg-input resize-none min-h-[40px] max-h-32 text-sm rounded-lg placeholder:text-whatsapp-text-secondary"
+                    value={messageText}
+                    onChange={handleInputChange}
+                    onKeyDown={handleKeyDown}
+                    rows={1}
+                    data-testid="input-message"
+                  />
+                </div>
+                {messageText.trim() || selectedFile ? (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleSend}
+                    disabled={sendMessageMutation.isPending}
+                    className="text-whatsapp-icon hover:bg-whatsapp-hover disabled:opacity-50"
+                    data-testid="button-send-message"
+                  >
+                    <Send className="w-6 h-6" />
+                  </Button>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={startRecording}
+                    className="text-whatsapp-icon hover:bg-whatsapp-hover"
+                    data-testid="button-start-recording"
+                  >
+                    <Mic className="w-6 h-6" />
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1 flex items-center justify-center bg-whatsapp-bg-chat">
+          <div className="text-center">
+            <div className="w-64 h-64 mx-auto mb-4 opacity-20">
+              <svg viewBox="0 0 303 172" className="fill-whatsapp-text-secondary">
+                <path d="M229.565 160.229C262.212 149.245 286.931 118.241 283.39 73.4194C278.009 5.31929 212.315 -11.5738 171.472 8.48673C115.998 37.0981 60.0166 25.0687 28.9267 69.5983C-2.16336 114.128 24.9692 162.53 68.849 168.993C112.729 175.456 186.392 175.074 229.565 160.229Z" />
+                <path fill="#FFFFFF" d="M135.5 80.5C135.5 87.4036 129.904 93 123 93C116.096 93 110.5 87.4036 110.5 80.5C110.5 73.5964 116.096 68 123 68C129.904 68 135.5 73.5964 135.5 80.5Z" />
+                <path fill="#FFFFFF" d="M192.5 80.5C192.5 87.4036 186.904 93 180 93C173.096 93 167.5 87.4036 167.5 80.5C167.5 73.5964 173.096 68 180 68C186.904 68 192.5 73.5964 192.5 80.5Z" />
+              </svg>
+            </div>
+            <h2 className="text-2xl font-light text-whatsapp-text-primary mb-2">
+              WhatsApp Web
+            </h2>
+            <p className="text-sm text-whatsapp-text-secondary max-w-md">
+              Send and receive messages without keeping your phone online.
+              <br />
+              Select a chat to start messaging.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Right Panel - Contact Info */}
+      {showContactInfo && selectedChat && (
+        <div className="w-[340px] flex flex-col bg-whatsapp-bg-panel border-l border-whatsapp-divider">
+          <div className="flex items-center gap-4 px-4 py-4 bg-whatsapp-header">
+            <button
+              onClick={() => setShowContactInfo(false)}
+              className="text-whatsapp-icon hover:text-whatsapp-text-primary transition-colors"
+            >
+              <X className="h-6 w-6" />
+            </button>
+            <span className="text-whatsapp-text-primary font-medium">Contact info</span>
+          </div>
+
+          <ScrollArea className="flex-1">
+            <div className="flex flex-col items-center py-8 bg-whatsapp-header">
+              <Avatar className="h-48 w-48 mb-4">
+                <AvatarFallback 
+                  className="text-white text-6xl font-medium"
+                  style={{ backgroundColor: getAvatarColor(displayName) }}
+                >
+                  {displayName.charAt(0).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              <h2 className="text-xl font-medium text-whatsapp-text-primary">
+                {displayName}
+              </h2>
+              <p className="text-sm text-whatsapp-text-secondary mt-1">
+                {selectedChat.clientPhone || "No phone number"}
+              </p>
+            </div>
+
+            <div className="h-2 bg-whatsapp-bg-dark" />
+
+            <div className="px-6 py-4 bg-whatsapp-header">
+              <label className="text-sm text-whatsapp-text-secondary mb-2 block">
+                Chat Tag
+              </label>
+              <Select
+                value={currentTag}
+                onValueChange={handleSetTag}
+                disabled={!canEditTag}
+              >
+                <SelectTrigger className="bg-whatsapp-bg-input border-0 text-whatsapp-text-primary">
+                  <SelectValue>
+                    <div className="flex items-center gap-2">
+                      <div className={cn("h-3 w-3 rounded-full", TAG_CONFIG[currentTag]?.bgClass || "bg-tag-new")} />
+                      <span>{TAG_CONFIG[currentTag]?.label || currentTag}</span>
+                    </div>
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent className="bg-whatsapp-bg-panel border-whatsapp-divider">
+                  {CHAT_TAGS.map((tag) => (
+                    <SelectItem 
+                      key={tag} 
+                      value={tag}
+                      className="text-whatsapp-text-primary focus:bg-whatsapp-hover focus:text-whatsapp-text-primary"
                     >
-                      <SelectValue placeholder="Assign" />
+                      <div className="flex items-center gap-2">
+                        <div className={cn("h-3 w-3 rounded-full", TAG_CONFIG[tag].bgClass)} />
+                        <span>{TAG_CONFIG[tag].label}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {canAssign && (
+              <>
+                <div className="h-px bg-whatsapp-divider" />
+                <div className="px-6 py-4 bg-whatsapp-header">
+                  <label className="text-sm text-whatsapp-text-secondary mb-2 block">
+                    Assigned Designer
+                  </label>
+                  <Select
+                    value={String(selectedChat.assignedToId || "unassigned")}
+                    onValueChange={(value) => handleAssign(value === "unassigned" ? null : Number(value))}
+                  >
+                    <SelectTrigger className="bg-whatsapp-bg-input border-0 text-whatsapp-text-primary">
+                      <SelectValue>
+                        {selectedChat.assignee ? (
+                          <div className="flex items-center gap-2">
+                            <Avatar className="h-6 w-6">
+                              <AvatarFallback className="bg-whatsapp-green text-white text-xs">
+                                {selectedChat.assignee.name?.charAt(0) || "D"}
+                              </AvatarFallback>
+                            </Avatar>
+                            <span>{selectedChat.assignee.name}</span>
+                          </div>
+                        ) : (
+                          <span className="text-whatsapp-text-secondary">Unassigned</span>
+                        )}
+                      </SelectValue>
                     </SelectTrigger>
-                    <SelectContent style={{ backgroundColor: "#233138", borderColor: "#233138" }}>
-                      {designers.map(d => (
-                        <SelectItem key={d.id} value={d.id.toString()} className="text-slate-300 text-sm">
-                          {d.name}
+                    <SelectContent className="bg-whatsapp-bg-panel border-whatsapp-divider">
+                      <SelectItem 
+                        value="unassigned"
+                        className="text-whatsapp-text-primary focus:bg-whatsapp-hover focus:text-whatsapp-text-primary"
+                      >
+                        <span className="text-whatsapp-text-secondary">Unassigned</span>
+                      </SelectItem>
+                      {designers.map(designer => (
+                        <SelectItem 
+                          key={designer.id} 
+                          value={String(designer.id)}
+                          className="text-whatsapp-text-primary focus:bg-whatsapp-hover focus:text-whatsapp-text-primary"
+                        >
+                          <div className="flex items-center gap-2">
+                            <Avatar className="h-6 w-6">
+                              <AvatarFallback className="bg-whatsapp-green text-white text-xs">
+                                {designer.name?.charAt(0) || "D"}
+                              </AvatarFallback>
+                            </Avatar>
+                            <span>{designer.name}</span>
+                          </div>
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                )}
-                
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="text-slate-400 hover:bg-white/5" data-testid="button-chat-menu">
-                      <MoreVertical className="w-5 h-5" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent 
-                    align="end" 
-                    className="w-56"
-                    style={{ backgroundColor: "#233138", borderColor: "#233138" }}
-                  >
-                    <DropdownMenuItem 
-                      className="text-slate-200 hover:bg-white/5 cursor-pointer"
-                      onClick={() => {
-                        if (selectedChat?.clientPhone) {
-                          navigator.clipboard.writeText(selectedChat.clientPhone);
-                          toast({ title: "Copied", description: "Phone number copied" });
-                        }
-                      }}
-                      data-testid="menu-copy-phone"
+                </div>
+              </>
+            )}
+
+            <div className="h-2 bg-whatsapp-bg-dark" />
+
+            {linkedOrder && (
+              <>
+                <div className="px-6 py-4 bg-whatsapp-header">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm text-whatsapp-text-secondary">Linked Order</label>
+                    <button
+                      onClick={handleUnlinkOrder}
+                      className="text-xs text-red-400 hover:text-red-300"
                     >
-                      Copy phone number
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator style={{ backgroundColor: "#2a3942" }} />
-                    
-                    {CHAT_TAGS.map(tag => {
-                      const isActive = (selectedChat.tags as string[] || []).includes(tag);
-                      return (
-                        <DropdownMenuItem 
-                          key={tag}
-                          className="text-slate-200 hover:bg-white/5 cursor-pointer flex items-center justify-between"
-                          onClick={() => handleSetTag(tag)}
-                          data-testid={`menu-tag-${tag.toLowerCase().replace(/\s+/g, "-")}`}
-                        >
-                          <span>{tag}</span>
-                          {isActive && <Check className="w-4 h-4 text-green-500" />}
-                        </DropdownMenuItem>
-                      );
-                    })}
-                    
-                    <DropdownMenuSeparator style={{ backgroundColor: "#2a3942" }} />
-                    
-                    {linkedOrder ? (
-                      <>
-                        <DropdownMenuItem 
-                          className="text-slate-200 hover:bg-white/5 cursor-pointer"
-                          onClick={() => setShowOrderPanel(true)}
-                          data-testid="menu-view-order"
-                        >
-                          View linked order
-                        </DropdownMenuItem>
-                        {(isAdmin || isSupport) && (
-                          <DropdownMenuItem 
-                            className="text-slate-200 hover:bg-white/5 cursor-pointer"
-                            onClick={handleUnlinkOrder}
-                            data-testid="menu-unlink-order"
-                          >
-                            Unlink order
-                          </DropdownMenuItem>
-                        )}
-                      </>
-                    ) : (isAdmin || isSupport) ? (
-                      <DropdownMenuItem 
-                        className="text-slate-200 hover:bg-white/5 cursor-pointer"
-                        onClick={() => setShowLinkOrderDialog(true)}
-                        data-testid="menu-link-order"
-                      >
-                        Link to order
-                      </DropdownMenuItem>
-                    ) : null}
-                    
-                    {(isAdmin || isSupport) && (
-                      <>
-                        <DropdownMenuSeparator style={{ backgroundColor: "#2a3942" }} />
-                        <DropdownMenuItem 
-                          className="text-slate-200 hover:bg-white/5 cursor-pointer"
-                          onClick={() => {
-                            setRenameChatName(selectedChat?.clientName || "");
-                            setShowRenameDialog(true);
-                          }}
-                          data-testid="menu-rename-chat"
-                        >
-                          Rename chat
-                        </DropdownMenuItem>
-                      </>
-                    )}
-                    
-                    {isAdmin && (
-                      <DropdownMenuItem 
-                        className="text-red-400 hover:bg-white/5 cursor-pointer"
-                        onClick={() => setShowDeleteChatConfirm(true)}
-                        data-testid="menu-delete-chat"
-                      >
-                        Delete chat
-                      </DropdownMenuItem>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </div>
-
-            {/* Messages Area */}
-            <ScrollArea 
-              className="flex-1 px-16 py-4"
-              style={{ 
-                backgroundImage: `url(${chatBgPattern})`,
-                backgroundSize: "cover",
-                backgroundPosition: "center",
-                backgroundRepeat: "repeat"
-              }}
-            >
-              <div className="space-y-2 max-w-3xl mx-auto">
-                {/* Encryption Notice */}
-                <div className="flex justify-center mb-4">
-                  <div 
-                    className="px-3 py-1.5 rounded-lg text-xs flex items-center gap-2"
-                    style={{ backgroundColor: "#182229" }}
-                  >
-                    <svg viewBox="0 0 24 24" className="w-3 h-3 text-yellow-500 fill-current">
-                      <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 6c1.4 0 2.8 1.1 2.8 2.5V11c.6 0 1.2.6 1.2 1.3v3.5c0 .6-.6 1.2-1.2 1.2H9.2c-.6 0-1.2-.6-1.2-1.3v-3.5c0-.6.6-1.2 1.2-1.2V9.5C9.2 8.1 10.6 7 12 7zm0 1.2c-.8 0-1.5.5-1.5 1.3V11h3V9.5c0-.8-.7-1.3-1.5-1.3z"/>
-                    </svg>
-                    <span style={{ color: "#8696a0" }}>
-                      Messages are end-to-end encrypted. No one outside of this chat, not even WhatsApp, can read or listen to them.
-                    </span>
+                      Unlink
+                    </button>
                   </div>
-                </div>
-                
-                {/* Today Marker */}
-                <div className="flex justify-center mb-4">
-                  <div 
-                    className="px-3 py-1 rounded-lg text-xs font-medium"
-                    style={{ backgroundColor: "#182229", color: "#d1d7db" }}
+                  <button
+                    onClick={() => setShowOrderPanel(true)}
+                    className="w-full p-3 rounded-lg bg-whatsapp-bg-input hover:bg-whatsapp-hover transition-colors text-left"
                   >
-                    TODAY
-                  </div>
-                </div>
-                
-                {messages?.map(msg => (
-                  <MessageBubble 
-                    key={msg.id} 
-                    message={msg} 
-                    onDelete={(isAdmin || isSupport) ? () => deleteMessageMutation.mutate(msg.id) : undefined}
-                  />
-                ))}
-                <div ref={messagesEndRef} />
-              </div>
-            </ScrollArea>
-
-            {/* Message Input */}
-            <div 
-              className="px-4 py-3"
-              style={{ backgroundColor: "#202c33" }}
-            >
-              {showShortcuts && filteredShortcuts && filteredShortcuts.length > 0 && (
-                <div 
-                  className="absolute bottom-20 left-4 right-4 rounded-lg border overflow-hidden shadow-xl"
-                  style={{ backgroundColor: "#233138", borderColor: "#2a3942" }}
-                >
-                  <div className="max-h-40 overflow-y-auto">
-                    {filteredShortcuts.map(shortcut => (
-                      <button
-                        key={shortcut.id}
-                        className="w-full text-left px-4 py-3 hover:bg-white/5 flex items-center gap-3"
-                        onClick={() => handleShortcut(shortcut)}
-                        data-testid={`shortcut-${shortcut.command}`}
-                      >
-                        <span className="text-green-400 font-medium">/{shortcut.command}</span>
-                        <span className="text-slate-400 text-sm truncate">{shortcut.content.substring(0, 50)}...</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {selectedFile && (
-                <div 
-                  className="mb-2 p-2 rounded-lg flex items-center gap-2 max-w-xs"
-                  style={{ backgroundColor: "#2a3942" }}
-                >
-                  {selectedFile.type.startsWith("image/") ? (
-                    <ImageIcon className="w-5 h-5 text-slate-400" />
-                  ) : (
-                    <File className="w-5 h-5 text-slate-400" />
-                  )}
-                  <span className="text-sm text-slate-300 truncate flex-1">{selectedFile.name}</span>
-                  <button 
-                    className="p-1 hover:bg-white/10 rounded"
-                    onClick={() => setSelectedFile(null)}
-                  >
-                    <X className="w-4 h-4 text-slate-400" />
+                    <div className="flex items-center gap-2">
+                      <LinkIcon className="h-4 w-4 text-whatsapp-teal" />
+                      <span className="text-whatsapp-text-primary font-medium">
+                        {linkedOrder.orderNumber || `#${linkedOrder.id}`}
+                      </span>
+                    </div>
+                    <p className="text-xs text-whatsapp-text-secondary mt-1">
+                      {linkedOrder.clientName} - {linkedOrder.status}
+                    </p>
                   </button>
                 </div>
-              )}
+                <div className="h-2 bg-whatsapp-bg-dark" />
+              </>
+            )}
 
-              {/* Emoji Picker */}
-              {showEmojiPicker && (
-                <div 
-                  className="absolute bottom-20 left-4 rounded-lg border shadow-xl z-50 p-3"
-                  style={{ backgroundColor: "#233138", borderColor: "#2a3942" }}
-                >
-                  <div className="flex gap-2 mb-2 border-b pb-2" style={{ borderColor: "#2a3942" }}>
-                    {Object.keys(emojiCategories).map(cat => (
-                      <button
-                        key={cat}
-                        className="text-xs px-2 py-1 rounded text-slate-300 hover:bg-white/10 capitalize"
-                        onClick={() => {}}
-                      >
-                        {cat === "smileys" ? "😀" : cat === "gestures" ? "👋" : cat === "hearts" ? "❤️" : cat === "objects" ? "📱" : "🌸"}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="grid grid-cols-8 gap-1 max-h-48 overflow-y-auto">
-                    {Object.values(emojiCategories).flat().map((emoji, idx) => (
-                      <button
-                        key={idx}
-                        className="text-xl p-1 hover:bg-white/10 rounded"
-                        onClick={() => {
-                          insertEmoji(emoji);
-                          setShowEmojiPicker(false);
-                        }}
-                      >
-                        {emoji}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Voice Recording UI */}
-              {isRecording || audioBlob ? (
-                <div className="flex items-center gap-3 w-full">
+            {!linkedOrder && isAdminOrSupport && (
+              <>
+                <div className="px-6 py-4 bg-whatsapp-header">
                   <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={cancelRecording}
-                    className="text-red-400 hover:bg-white/5"
-                    data-testid="button-cancel-recording"
+                    variant="outline"
+                    onClick={() => setShowLinkOrderDialog(true)}
+                    className="w-full border-whatsapp-divider text-whatsapp-text-primary hover:bg-whatsapp-hover"
                   >
-                    <Trash2 className="w-5 h-5" />
+                    <LinkIcon className="h-4 w-4 mr-2" />
+                    Link to Order
                   </Button>
-                  
-                  <div 
-                    className="flex-1 flex items-center gap-3 px-4 py-2 rounded-lg"
-                    style={{ backgroundColor: "#2a3942" }}
-                  >
-                    {isRecording ? (
-                      <>
-                        <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse" />
-                        <span className="text-white text-sm">{formatRecordingTime(recordingTime)}</span>
-                        <div className="flex-1 h-1 bg-white/20 rounded-full overflow-hidden">
-                          <div className="h-full bg-red-500 w-full animate-pulse" />
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <Mic className="w-5 h-5 text-green-500" />
-                        <span className="text-white text-sm">{formatRecordingTime(recordingTime)}</span>
-                        <span className="text-slate-400 text-sm">Voice message ready</span>
-                      </>
-                    )}
-                  </div>
+                </div>
+                <div className="h-2 bg-whatsapp-bg-dark" />
+              </>
+            )}
 
-                  {isRecording ? (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={stopRecording}
-                      className="text-white bg-red-500 hover:bg-red-600 rounded-full"
-                      data-testid="button-stop-recording"
-                    >
-                      <Square className="w-4 h-4" />
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={sendVoiceMessage}
-                      className="text-white bg-[#00a884] hover:bg-[#00a884]/80 rounded-full"
-                      data-testid="button-send-voice"
-                    >
-                      <Send className="w-5 h-5" />
-                    </Button>
-                  )}
-                </div>
-              ) : (
-                <div className="flex items-end gap-2">
-                  <Button 
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                    className={cn("text-slate-400 hover:bg-white/5", showEmojiPicker && "text-[#00a884]")}
-                    data-testid="button-emoji"
-                  >
-                    <Smile className="w-6 h-6" />
-                  </Button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    className="hidden"
-                    onChange={handleFileSelect}
-                    accept="image/*,.pdf,.doc,.docx"
-                    data-testid="input-file-upload"
-                  />
-                  <Button 
-                    variant="ghost"
-                    size="icon"
-                    className="text-slate-400 hover:bg-white/5"
-                    onClick={() => fileInputRef.current?.click()}
-                    data-testid="button-attach-file"
-                  >
-                    <Paperclip className="w-6 h-6" />
-                  </Button>
-                  <Button 
-                    variant="ghost"
-                    size="icon"
-                    className="text-slate-400 hover:bg-white/5"
-                    onClick={() => setShowCatalogDialog(true)}
-                    data-testid="button-catalog"
-                  >
-                    <Package className="w-6 h-6" />
-                  </Button>
-                  <div className="flex-1">
-                    <Textarea
-                      ref={inputRef}
-                      placeholder="Type a message"
-                      className="border-0 text-white resize-none min-h-[40px] max-h-32 text-sm rounded-lg"
-                      style={{ backgroundColor: "#2a3942" }}
-                      value={messageText}
-                      onChange={handleInputChange}
-                      onKeyDown={handleKeyDown}
-                      rows={1}
-                      data-testid="input-message"
-                    />
-                  </div>
-                  {messageText.trim() || selectedFile ? (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={handleSend}
-                      disabled={sendMessageMutation.isPending}
-                      className="text-slate-400 hover:bg-white/5 disabled:opacity-50"
-                      data-testid="button-send-message"
-                    >
-                      <Send className="w-6 h-6" />
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={startRecording}
-                      className="text-slate-400 hover:bg-white/5"
-                      data-testid="button-start-recording"
-                    >
-                      <Mic className="w-6 h-6" />
-                    </Button>
-                  )}
-                </div>
-              )}
-            </div>
-          </>
-        ) : (
-          /* WhatsApp Web Intro Screen */
-          <div className="flex-1 flex flex-col items-center justify-center" style={{ backgroundColor: "#222e35" }}>
-            <div className="text-center max-w-md">
-              {/* Illustration */}
-              <div className="mb-8 relative">
-                <div className="flex items-center justify-center gap-8">
-                  {/* Laptop Icon */}
-                  <div className="relative">
-                    <div 
-                      className="w-32 h-24 rounded-lg flex items-center justify-center"
-                      style={{ backgroundColor: "#233138", border: "2px solid #2a3942" }}
-                    >
-                      <div className="w-8 h-6 rounded" style={{ backgroundColor: "#00a884" }} />
-                    </div>
-                    <div 
-                      className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-20 h-2 rounded-b-lg"
-                      style={{ backgroundColor: "#233138" }}
-                    />
-                  </div>
-                  
-                  {/* Phone Icon */}
-                  <div 
-                    className="w-12 h-20 rounded-xl flex items-center justify-center"
-                    style={{ backgroundColor: "#233138", border: "2px solid #2a3942" }}
-                  >
-                    <div className="w-4 h-4 rounded-full" style={{ backgroundColor: "#00a884" }}>
-                      <Check className="w-4 h-4 text-white p-0.5" />
-                    </div>
-                  </div>
-                </div>
+            <div className="bg-whatsapp-header">
+              <div className="px-6 py-3 flex items-center justify-between">
+                <span className="text-whatsapp-text-secondary text-sm">Media, links and docs</span>
+                <span className="text-whatsapp-teal text-sm">
+                  {sharedImages.length + sharedFiles.length}
+                </span>
               </div>
               
-              <h1 className="text-3xl font-light text-slate-200 mb-4">WhatsApp Web</h1>
-              <p className="text-slate-400 text-sm leading-relaxed mb-8">
-                Send and receive messages without keeping your phone online.<br />
-                Use WhatsApp on up to 4 linked devices and 1 phone at the same time.
-              </p>
-              
-              <p className="text-sm text-slate-500">
-                Built by <span style={{ color: "#00a884" }}>Pixely_Digital</span>
-              </p>
+              {sharedImages.length > 0 && (
+                <div className="px-6 pb-4 grid grid-cols-3 gap-1">
+                  {sharedImages.slice(0, 6).map(img => (
+                    <div 
+                      key={img.id} 
+                      className="aspect-square bg-whatsapp-bg-input rounded overflow-hidden"
+                    >
+                      {img.fileUrl && (
+                        <img 
+                          src={img.fileUrl} 
+                          alt="" 
+                          className="w-full h-full object-cover"
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
-        )}
-      </div>
 
-      {/* Link Order Dialog */}
+            <div className="h-2 bg-whatsapp-bg-dark" />
+
+            <div className="bg-whatsapp-header">
+              <button className="w-full px-6 py-4 flex items-center gap-6 hover:bg-whatsapp-hover transition-colors">
+                <Star className="h-5 w-5 text-whatsapp-icon" />
+                <span className="text-whatsapp-text-primary">Starred messages</span>
+              </button>
+              <button className="w-full px-6 py-4 flex items-center gap-6 hover:bg-whatsapp-hover transition-colors">
+                <Bell className="h-5 w-5 text-whatsapp-icon" />
+                <span className="text-whatsapp-text-primary">Mute notifications</span>
+              </button>
+
+              {isAdminOrSupport && (
+                <>
+                  <button 
+                    onClick={() => {
+                      setRenameChatName(displayName);
+                      setShowRenameDialog(true);
+                    }}
+                    className="w-full px-6 py-4 flex items-center gap-6 hover:bg-whatsapp-hover transition-colors"
+                  >
+                    <Lock className="h-5 w-5 text-whatsapp-icon" />
+                    <span className="text-whatsapp-text-primary">Rename chat</span>
+                  </button>
+                  {isAdmin && (
+                    <button 
+                      onClick={() => setShowDeleteChatConfirm(true)}
+                      className="w-full px-6 py-4 flex items-center gap-6 hover:bg-whatsapp-hover transition-colors"
+                    >
+                      <Trash2 className="h-5 w-5 text-red-400" />
+                      <span className="text-red-400">Delete chat</span>
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </ScrollArea>
+        </div>
+      )}
+
+      {/* Dialogs */}
       <Dialog open={showLinkOrderDialog} onOpenChange={setShowLinkOrderDialog}>
-        <DialogContent 
-          className="border max-w-md"
-          style={{ backgroundColor: "#233138", borderColor: "#2a3942" }}
-        >
+        <DialogContent className="border bg-whatsapp-bg-panel border-whatsapp-divider max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-white">Link to Order</DialogTitle>
+            <DialogTitle className="text-whatsapp-text-primary">Link to Order</DialogTitle>
           </DialogHeader>
           <div className="space-y-2 max-h-80 overflow-y-auto">
             {orders?.filter(o => o.advancePaymentStatus === "approved").map(order => (
               <button
                 key={order.id}
-                className="w-full text-left p-3 rounded-lg transition-colors hover:bg-white/5"
-                style={{ backgroundColor: "#2a3942" }}
+                className="w-full text-left p-3 rounded-lg transition-colors hover:bg-whatsapp-hover bg-whatsapp-bg-input"
                 onClick={() => handleLinkOrder(order.id)}
                 data-testid={`link-order-${order.id}`}
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-medium text-white">{order.orderNumber || `Order #${order.id}`}</span>
-                  <Badge 
-                    variant="outline" 
-                    className="text-xs border-slate-600 text-slate-300"
-                  >
+                  <span className="font-medium text-whatsapp-text-primary">{order.orderNumber || `Order #${order.id}`}</span>
+                  <Badge variant="outline" className="text-xs border-whatsapp-divider text-whatsapp-text-secondary">
                     {order.status}
                   </Badge>
                 </div>
-                <p className="text-sm text-slate-400 mt-1">{order.clientName}</p>
+                <p className="text-sm text-whatsapp-text-secondary mt-1">{order.clientName}</p>
               </button>
             ))}
             {(!orders || orders.filter(o => o.advancePaymentStatus === "approved").length === 0) && (
-              <p className="text-center text-slate-400 py-4">No orders available</p>
+              <p className="text-center text-whatsapp-text-secondary py-4">No orders available</p>
             )}
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* Order Details Panel */}
       <Dialog open={showOrderPanel} onOpenChange={setShowOrderPanel}>
-        <DialogContent 
-          className="border max-w-lg"
-          style={{ backgroundColor: "#233138", borderColor: "#2a3942" }}
-        >
+        <DialogContent className="border bg-whatsapp-bg-panel border-whatsapp-divider max-w-lg">
           <DialogHeader>
-            <DialogTitle className="text-white flex items-center gap-2">
-              <LinkIcon className="w-5 h-5" style={{ color: "#00a884" }} />
+            <DialogTitle className="text-whatsapp-text-primary flex items-center gap-2">
+              <LinkIcon className="w-5 h-5 text-whatsapp-teal" />
               Linked Order Details
             </DialogTitle>
           </DialogHeader>
@@ -1333,29 +1661,29 @@ export default function WhatsAppPage() {
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <p className="text-xs text-slate-400 mb-1">Order ID</p>
-                  <p className="font-medium text-white">{linkedOrder.orderNumber || `#${linkedOrder.id}`}</p>
+                  <p className="text-xs text-whatsapp-text-secondary mb-1">Order ID</p>
+                  <p className="font-medium text-whatsapp-text-primary">{linkedOrder.orderNumber || `#${linkedOrder.id}`}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-slate-400 mb-1">Status</p>
+                  <p className="text-xs text-whatsapp-text-secondary mb-1">Status</p>
                   <Badge className="capitalize">{linkedOrder.status}</Badge>
                 </div>
                 <div>
-                  <p className="text-xs text-slate-400 mb-1">Client</p>
-                  <p className="font-medium text-white">{linkedOrder.clientName}</p>
+                  <p className="text-xs text-whatsapp-text-secondary mb-1">Client</p>
+                  <p className="font-medium text-whatsapp-text-primary">{linkedOrder.clientName}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-slate-400 mb-1">Phone</p>
-                  <p className="font-medium text-white">{linkedOrder.clientPhone || "—"}</p>
+                  <p className="text-xs text-whatsapp-text-secondary mb-1">Phone</p>
+                  <p className="font-medium text-whatsapp-text-primary">{linkedOrder.clientPhone || "—"}</p>
                 </div>
                 {isAdmin && (
                   <>
                     <div>
-                      <p className="text-xs text-slate-400 mb-1">Total Price</p>
-                      <p className="font-medium text-white">₨{((linkedOrder.totalPrice || 0) / 100).toLocaleString()}</p>
+                      <p className="text-xs text-whatsapp-text-secondary mb-1">Total Price</p>
+                      <p className="font-medium text-whatsapp-text-primary">₨{((linkedOrder.totalPrice || 0) / 100).toLocaleString()}</p>
                     </div>
                     <div>
-                      <p className="text-xs text-slate-400 mb-1">Payment Status</p>
+                      <p className="text-xs text-whatsapp-text-secondary mb-1">Payment Status</p>
                       <Badge variant={linkedOrder.paymentStatus === "paid" ? "default" : "secondary"}>
                         {linkedOrder.paymentStatus}
                       </Badge>
@@ -1363,10 +1691,10 @@ export default function WhatsAppPage() {
                   </>
                 )}
               </div>
-              <div className="flex gap-2 pt-4" style={{ borderTop: "1px solid #2a3942" }}>
+              <div className="flex gap-2 pt-4 border-t border-whatsapp-divider">
                 <Button 
                   variant="outline" 
-                  className="flex-1 border-slate-600 text-slate-300 hover:bg-white/5"
+                  className="flex-1 border-whatsapp-divider text-whatsapp-text-primary hover:bg-whatsapp-hover"
                   onClick={() => {
                     setShowOrderPanel(false);
                     window.location.href = "/orders";
@@ -1381,22 +1709,17 @@ export default function WhatsAppPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Catalog Dialog */}
       <Dialog open={showCatalogDialog} onOpenChange={setShowCatalogDialog}>
-        <DialogContent 
-          className="border max-w-lg max-h-[80vh] overflow-hidden flex flex-col"
-          style={{ backgroundColor: "#233138", borderColor: "#2a3942" }}
-        >
+        <DialogContent className="border bg-whatsapp-bg-panel border-whatsapp-divider max-w-lg max-h-[80vh] overflow-hidden flex flex-col">
           <DialogHeader>
-            <DialogTitle className="text-slate-100">Send Catalog</DialogTitle>
+            <DialogTitle className="text-whatsapp-text-primary">Send Catalog</DialogTitle>
           </DialogHeader>
           <ScrollArea className="flex-1 pr-4">
             <div className="space-y-3">
               {catalogItems && catalogItems.length > 0 ? catalogItems.map(item => (
                 <button
                   key={item.id}
-                  className="w-full p-3 rounded-lg text-left hover:bg-white/5 transition-colors flex items-start gap-3"
-                  style={{ backgroundColor: "#2a3942" }}
+                  className="w-full p-3 rounded-lg text-left hover:bg-whatsapp-hover transition-colors flex items-start gap-3 bg-whatsapp-bg-input"
                   onClick={() => {
                     if (selectedChat) {
                       const catalogMessage = `*${item.name}*\n${item.description || ''}\n\nPrice: PKR ${item.price.toLocaleString()}`;
@@ -1417,21 +1740,18 @@ export default function WhatsAppPage() {
                       className="w-16 h-16 object-cover rounded-md flex-shrink-0"
                     />
                   ) : (
-                    <div 
-                      className="w-16 h-16 rounded-md flex items-center justify-center flex-shrink-0"
-                      style={{ backgroundColor: "#1a252d" }}
-                    >
-                      <Package className="w-6 h-6 text-slate-500" />
+                    <div className="w-16 h-16 rounded-md flex items-center justify-center flex-shrink-0 bg-whatsapp-bg-dark">
+                      <Package className="w-6 h-6 text-whatsapp-text-secondary" />
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
-                    <div className="font-medium text-slate-100">{item.name}</div>
-                    <div className="text-sm text-slate-400 truncate">{item.description || ''}</div>
-                    <div className="text-[#00a884] font-medium mt-1">PKR {item.price.toLocaleString()}</div>
+                    <div className="font-medium text-whatsapp-text-primary">{item.name}</div>
+                    <div className="text-sm text-whatsapp-text-secondary truncate">{item.description || ''}</div>
+                    <div className="text-whatsapp-green font-medium mt-1">PKR {item.price.toLocaleString()}</div>
                   </div>
                 </button>
               )) : (
-                <div className="text-center py-8 text-slate-400">
+                <div className="text-center py-8 text-whatsapp-text-secondary">
                   <Package className="w-12 h-12 mx-auto mb-3 opacity-50" />
                   <p>No catalog items available</p>
                   <p className="text-sm mt-1">Ask admin to add items in Catalog settings</p>
@@ -1442,33 +1762,29 @@ export default function WhatsAppPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Create Chat Dialog */}
       <Dialog open={showCreateChatDialog} onOpenChange={setShowCreateChatDialog}>
-        <DialogContent 
-          className="border max-w-md"
-          style={{ backgroundColor: "#233138", borderColor: "#2a3942" }}
-        >
+        <DialogContent className="border bg-whatsapp-bg-panel border-whatsapp-divider max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-slate-100">Create New Chat</DialogTitle>
+            <DialogTitle className="text-whatsapp-text-primary">Create New Chat</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm text-slate-300">Client Name *</label>
+              <label className="text-sm text-whatsapp-text-secondary">Client Name *</label>
               <Input
                 value={newChatName}
                 onChange={(e) => setNewChatName(e.target.value)}
                 placeholder="Enter client name"
-                className="border-slate-600 bg-[#2a3942] text-slate-100"
+                className="border-whatsapp-divider bg-whatsapp-bg-input text-whatsapp-text-primary"
                 data-testid="input-new-chat-name"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm text-slate-300">Phone Number</label>
+              <label className="text-sm text-whatsapp-text-secondary">Phone Number</label>
               <Input
                 value={newChatPhone}
                 onChange={(e) => setNewChatPhone(e.target.value)}
                 placeholder="+92 300 1234567"
-                className="border-slate-600 bg-[#2a3942] text-slate-100"
+                className="border-whatsapp-divider bg-whatsapp-bg-input text-whatsapp-text-primary"
                 data-testid="input-new-chat-phone"
               />
             </div>
@@ -1476,7 +1792,7 @@ export default function WhatsAppPage() {
               <Button
                 variant="outline"
                 onClick={() => setShowCreateChatDialog(false)}
-                className="border-slate-600 text-slate-300 hover:bg-[#2a3942]"
+                className="border-whatsapp-divider text-whatsapp-text-secondary hover:bg-whatsapp-hover"
               >
                 Cancel
               </Button>
@@ -1492,7 +1808,7 @@ export default function WhatsAppPage() {
                   });
                 }}
                 disabled={createChatMutation.isPending}
-                className="bg-[#00a884] hover:bg-[#00a884]/90 text-white"
+                className="bg-whatsapp-green hover:bg-whatsapp-green-dark text-white"
                 data-testid="button-submit-create-chat"
               >
                 Create Chat
@@ -1502,23 +1818,19 @@ export default function WhatsAppPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Rename Chat Dialog */}
       <Dialog open={showRenameDialog} onOpenChange={setShowRenameDialog}>
-        <DialogContent 
-          className="border max-w-md"
-          style={{ backgroundColor: "#233138", borderColor: "#2a3942" }}
-        >
+        <DialogContent className="border bg-whatsapp-bg-panel border-whatsapp-divider max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-slate-100">Rename Chat</DialogTitle>
+            <DialogTitle className="text-whatsapp-text-primary">Rename Chat</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm text-slate-300">Chat Name</label>
+              <label className="text-sm text-whatsapp-text-secondary">Chat Name</label>
               <Input
                 value={renameChatName}
                 onChange={(e) => setRenameChatName(e.target.value)}
                 placeholder="Enter new name"
-                className="border-slate-600 bg-[#2a3942] text-slate-100"
+                className="border-whatsapp-divider bg-whatsapp-bg-input text-whatsapp-text-primary"
                 data-testid="input-rename-chat"
               />
             </div>
@@ -1526,7 +1838,7 @@ export default function WhatsAppPage() {
               <Button
                 variant="outline"
                 onClick={() => setShowRenameDialog(false)}
-                className="border-slate-600 text-slate-300 hover:bg-[#2a3942]"
+                className="border-whatsapp-divider text-whatsapp-text-secondary hover:bg-whatsapp-hover"
               >
                 Cancel
               </Button>
@@ -1539,8 +1851,7 @@ export default function WhatsAppPage() {
                   });
                   setShowRenameDialog(false);
                 }}
-                disabled={updateChatMutation.isPending}
-                className="bg-[#00a884] hover:bg-[#00a884]/90 text-white"
+                className="bg-whatsapp-green hover:bg-whatsapp-green-dark text-white"
                 data-testid="button-submit-rename"
               >
                 Rename
@@ -1550,131 +1861,37 @@ export default function WhatsAppPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Chat Confirmation Dialog */}
       <Dialog open={showDeleteChatConfirm} onOpenChange={setShowDeleteChatConfirm}>
-        <DialogContent 
-          className="border max-w-md"
-          style={{ backgroundColor: "#233138", borderColor: "#2a3942" }}
-        >
+        <DialogContent className="border bg-whatsapp-bg-panel border-whatsapp-divider max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-slate-100">Delete Chat</DialogTitle>
+            <DialogTitle className="text-whatsapp-text-primary">Delete Chat</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            <p className="text-slate-300">
-              Are you sure you want to delete this chat? This will permanently delete all messages and cannot be undone.
-            </p>
-            <div className="flex justify-end gap-2 pt-2">
-              <Button
-                variant="outline"
-                onClick={() => setShowDeleteChatConfirm(false)}
-                className="border-slate-600 text-slate-300 hover:bg-[#2a3942]"
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={() => {
-                  if (!selectedChat) return;
+          <p className="text-whatsapp-text-secondary">
+            Are you sure you want to delete this chat? This will also delete all messages. This action cannot be undone.
+          </p>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowDeleteChatConfirm(false)}
+              className="border-whatsapp-divider text-whatsapp-text-secondary hover:bg-whatsapp-hover"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (selectedChat) {
                   deleteChatMutation.mutate(selectedChat.id);
                   setShowDeleteChatConfirm(false);
-                }}
-                disabled={deleteChatMutation.isPending}
-                data-testid="button-confirm-delete-chat"
-              >
-                Delete
-              </Button>
-            </div>
+                }
+              }}
+              className="bg-red-600 hover:bg-red-700 text-white"
+              data-testid="button-confirm-delete"
+            >
+              Delete
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
-    </div>
-  );
-}
-
-function MessageBubble({ message, onDelete }: { message: Message; onDelete?: () => void }) {
-  const isAgent = message.senderType === "agent" || message.senderType === "user";
-  const isSystem = message.messageType === "system";
-  const [showMenu, setShowMenu] = useState(false);
-  
-  if (isSystem) {
-    return (
-      <div className="flex justify-center">
-        <div 
-          className="px-3 py-1 rounded-lg text-xs"
-          style={{ backgroundColor: "#182229", color: "#8696a0" }}
-        >
-          {message.content}
-        </div>
-      </div>
-    );
-  }
-  
-  return (
-    <div 
-      className={cn("flex group relative", isAgent ? "justify-end" : "justify-start")}
-      onMouseEnter={() => setShowMenu(true)}
-      onMouseLeave={() => setShowMenu(false)}
-    >
-      {/* Delete button on hover */}
-      {onDelete && showMenu && (
-        <button
-          onClick={onDelete}
-          className={cn(
-            "absolute top-1 p-1 rounded hover:bg-white/10 transition-opacity",
-            isAgent ? "left-0 -translate-x-full mr-2" : "right-0 translate-x-full ml-2"
-          )}
-          data-testid={`button-delete-message-${message.id}`}
-        >
-          <Trash2 className="w-4 h-4 text-red-400" />
-        </button>
-      )}
-      
-      <div
-        className="max-w-[65%] rounded-lg px-3 py-2 shadow-sm"
-        style={{ 
-          backgroundColor: isAgent ? "#005c4b" : "#202c33",
-        }}
-      >
-        {message.messageType === "file" && message.fileUrl && (
-          <div className="mb-2">
-            {message.fileUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
-              <img 
-                src={message.fileUrl} 
-                alt={message.fileName || "Attachment"} 
-                className="rounded-lg max-w-full"
-              />
-            ) : message.fileUrl.match(/\.(mp3|ogg|wav|webm|m4a|aac)$/i) ? (
-              <div className="flex items-center gap-2 py-1">
-                <Play className="w-5 h-5 text-white" />
-                <audio controls className="h-8 max-w-[200px]">
-                  <source src={message.fileUrl} />
-                </audio>
-              </div>
-            ) : (
-              <a 
-                href={message.fileUrl} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 text-blue-300 hover:underline"
-              >
-                <File className="w-4 h-4" />
-                <span className="text-sm">{message.fileName || "Download file"}</span>
-              </a>
-            )}
-          </div>
-        )}
-        {message.content && message.content !== "Voice message" && (
-          <p className="text-sm text-slate-100 whitespace-pre-wrap">{message.content}</p>
-        )}
-        <div className="flex items-center justify-end gap-1 mt-1">
-          <span className="text-[11px]" style={{ color: "#8696a0" }}>
-            {format(new Date(message.createdAt!), "HH:mm")}
-          </span>
-          {isAgent && (
-            <CheckCheck className="w-4 h-4 text-slate-400" />
-          )}
-        </div>
-      </div>
     </div>
   );
 }
