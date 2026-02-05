@@ -837,7 +837,7 @@ export default function WhatsAppPage() {
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const notificationAudioRef = useRef<HTMLAudioElement | null>(null);
-  const previousUnreadRef = useRef<number>(0);
+  const previousUnreadRef = useRef<number>(-1); // -1 means initial load not done yet
 
   const isAdmin = user?.role === "admin";
   const isSupport = user?.role === "support";
@@ -888,7 +888,8 @@ export default function WhatsAppPage() {
   useEffect(() => {
     if (!chats) return;
     const totalUnread = chats.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
-    if (totalUnread > previousUnreadRef.current && previousUnreadRef.current > 0) {
+    // Skip initial load (-1 means first load), then play sound when unread count increases
+    if (previousUnreadRef.current >= 0 && totalUnread > previousUnreadRef.current) {
       notificationAudioRef.current?.play().catch(() => {});
     }
     previousUnreadRef.current = totalUnread;
