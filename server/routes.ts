@@ -654,18 +654,38 @@ export async function registerRoutes(
   }
 
   // Helper function to upload media to WhatsApp and get media ID
-  async function uploadMediaToWhatsApp(filePath: string, mimeType: string): Promise<string | null> {
+  async function uploadMediaToWhatsApp(filePath: string, mimeType: string, fileName?: string): Promise<string | null> {
     if (!WHATSAPP_PHONE_NUMBER_ID || !WHATSAPP_ACCESS_TOKEN) {
       console.error("WhatsApp API credentials not configured");
       return null;
     }
 
     try {
-      const FormData = (await import('form-data')).default;
+      // Check if file exists
+      if (!filePath || !fs.existsSync(filePath)) {
+        console.error("File not found at path:", filePath);
+        return null;
+      }
+
+      // Read file as buffer for better compatibility
+      const fileBuffer = fs.readFileSync(filePath);
+      const actualFileName = fileName || path.basename(filePath);
+      
+      // Create a Blob from the buffer
+      const fileBlob = new Blob([fileBuffer], { type: mimeType });
+      
+      // Use native FormData (available in Node 18+)
       const formData = new FormData();
-      formData.append('file', fs.createReadStream(filePath));
+      formData.append('file', fileBlob, actualFileName);
       formData.append('type', mimeType);
       formData.append('messaging_product', 'whatsapp');
+
+      console.log("Uploading to WhatsApp API:", {
+        url: `${WHATSAPP_API_URL}/${WHATSAPP_PHONE_NUMBER_ID}/media`,
+        mimeType,
+        fileName: actualFileName,
+        fileSize: fileBuffer.length,
+      });
 
       const response = await fetch(
         `${WHATSAPP_API_URL}/${WHATSAPP_PHONE_NUMBER_ID}/media`,
@@ -673,9 +693,8 @@ export async function registerRoutes(
           method: "POST",
           headers: {
             "Authorization": `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
-            ...formData.getHeaders(),
           },
-          body: formData as any,
+          body: formData,
         }
       );
 
@@ -1124,8 +1143,17 @@ export async function registerRoutes(
       whatsappMediaType = "video";
     }
 
+    // Log file info for debugging
+    console.log("Uploading media to WhatsApp:", { 
+      path: file.path, 
+      mimetype: file.mimetype, 
+      size: file.size,
+      originalname: file.originalname,
+      exists: file.path ? fs.existsSync(file.path) : false
+    });
+
     // Upload media to WhatsApp
-    const mediaId = await uploadMediaToWhatsApp(file.path, file.mimetype);
+    const mediaId = await uploadMediaToWhatsApp(file.path, file.mimetype, file.originalname);
     if (!mediaId) {
       return res.status(500).json({ error: "Failed to upload media to WhatsApp" });
     }
