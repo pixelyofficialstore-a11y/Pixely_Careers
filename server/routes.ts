@@ -1227,12 +1227,13 @@ export async function registerRoutes(
       const allowedTypes = [
         'image/jpeg', 'image/png', 'image/gif', 'image/webp',
         'audio/ogg', 'audio/mpeg', 'audio/mp4', 'audio/amr', 'audio/aac', 'audio/webm',
-        'video/mp4', 'video/3gpp',
+        'video/mp4', 'video/3gpp', 'video/quicktime', 'video/webm', 'video/x-msvideo',
         'application/pdf', 'application/msword',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         'application/vnd.ms-excel',
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
       ];
+      console.log("WhatsApp media upload filter:", { mimetype: file.mimetype, allowed: allowedTypes.includes(file.mimetype) });
       if (allowedTypes.includes(file.mimetype)) {
         cb(null, true);
       } else {
