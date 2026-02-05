@@ -31,8 +31,8 @@ export interface IStorage {
   getChats(role: string, userId: number): Promise<Chat[]>;
   createChat(chat: InsertChat): Promise<Chat>;
   updateChat(id: number, updates: Partial<Chat>): Promise<Chat>;
-  createMessage(chatId: number, senderId: number | null, senderType: string, content: string, fileUrl?: string, externalMessageId?: string): Promise<Message>;
-  createMessageWithFile(chatId: number, senderId: number | null, senderType: string, content: string, fileUrl?: string, fileName?: string, fileMeta?: { size?: number; type?: string }): Promise<Message>;
+  createMessage(chatId: number, senderId: number | null, senderType: string, content: string, fileUrl?: string, externalMessageId?: string, replyToMessageId?: number): Promise<Message>;
+  createMessageWithFile(chatId: number, senderId: number | null, senderType: string, content: string, fileUrl?: string, fileName?: string, fileMeta?: { size?: number; type?: string }, replyToMessageId?: number): Promise<Message>;
   getMessageByFileUrl(chatId: number, fileUrl: string): Promise<Message | undefined>;
   updateMessageExternalId(id: number, externalMessageId: string): Promise<void>;
 

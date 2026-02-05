@@ -697,9 +697,9 @@ export async function registerRoutes(
     const outputPath = inputPath.replace(/\.webm$/, '.ogg');
     
     try {
-      // Convert to OGG with Opus codec - WhatsApp compatible format
-      // Requirements: mono audio, 48kHz sample rate, proper bitrate
-      await execAsync(`ffmpeg -i "${inputPath}" -acodec libopus -ac 1 -ar 48000 -b:a 128k -vbr on -compression_level 10 -application voip "${outputPath}" -y`);
+      // Convert to OGG with Opus codec - WhatsApp compatible format for voice messages
+      // Requirements: mono audio, 48kHz sample rate, 32kbps bitrate (WhatsApp standard)
+      await execAsync(`ffmpeg -i "${inputPath}" -c:a libopus -b:a 32k -vn -ac 1 -ar 48000 "${outputPath}" -y`);
       console.log(`Converted audio: ${inputPath} -> ${outputPath}`);
       
       // Verify output file exists and has content
@@ -968,6 +968,13 @@ export async function registerRoutes(
                 let fileName: string | undefined;
                 let fileMimeType: string | undefined;
                 
+                // Check if this message is a reply to another message
+                const replyToExternalId = message.context?.id;
+                let replyToMessageId: number | undefined;
+                if (replyToExternalId) {
+                  console.log("Incoming message is a reply to:", replyToExternalId);
+                }
+                
                 // Extract message content based on type and download media if needed
                 if (messageType === "text") {
                   messageContent = message.text?.body || "";
@@ -1165,6 +1172,16 @@ export async function registerRoutes(
                   continue;
                 }
                 
+                // Resolve replyToMessageId from external ID if this is a reply
+                if (replyToExternalId) {
+                  const chatMessages = await storage.getChatMessages(chat.id);
+                  const originalMsg = chatMessages.find(m => m.externalMessageId === replyToExternalId);
+                  if (originalMsg) {
+                    replyToMessageId = originalMsg.id;
+                    console.log("Resolved reply to local message ID:", replyToMessageId);
+                  }
+                }
+                
                 // Update existing chat with new message
                 await storage.updateChat(chat.id, {
                   lastMessage: messageContent,
@@ -1180,7 +1197,8 @@ export async function registerRoutes(
                     messageContent,
                     fileUrl,
                     fileName,
-                    fileMimeType ? { type: fileMimeType } : undefined
+                    fileMimeType ? { type: fileMimeType } : undefined,
+                    replyToMessageId // Include reply reference
                   );
                   // Update the external message ID
                   const latestMessages = await storage.getChatMessages(chat.id);
@@ -1195,7 +1213,8 @@ export async function registerRoutes(
                     "client",
                     messageContent,
                     undefined, // No file
-                    message.id // WhatsApp message ID
+                    message.id, // WhatsApp message ID
+                    replyToMessageId // Include reply reference
                   );
                 }
 
