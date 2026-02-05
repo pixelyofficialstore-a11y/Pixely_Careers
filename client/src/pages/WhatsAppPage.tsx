@@ -998,6 +998,7 @@ export default function WhatsAppPage() {
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           audioChunksRef.current.push(event.data);
+          console.log("Audio chunk received:", event.data.size, "bytes");
         }
       };
 
@@ -1005,11 +1006,18 @@ export default function WhatsAppPage() {
         // Use the actual mimeType from the recorder
         const actualMimeType = mediaRecorder.mimeType || mimeType;
         const blob = new Blob(audioChunksRef.current, { type: actualMimeType });
-        setAudioBlob(blob);
+        console.log("Final audio blob size:", blob.size, "bytes, chunks:", audioChunksRef.current.length);
+        if (blob.size > 1000) {
+          setAudioBlob(blob);
+        } else {
+          console.warn("Audio blob too small, discarding");
+          toast({ title: "Recording too short", description: "Please record a longer message", variant: "destructive" });
+        }
         stream.getTracks().forEach(track => track.stop());
       };
 
-      mediaRecorder.start();
+      // Start with timeslice of 100ms for more reliable chunk collection
+      mediaRecorder.start(100);
       setIsRecording(true);
       setRecordingTime(0);
       
