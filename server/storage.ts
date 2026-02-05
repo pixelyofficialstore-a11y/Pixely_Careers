@@ -34,6 +34,7 @@ export interface IStorage {
   createMessage(chatId: number, senderId: number | null, senderType: string, content: string, fileUrl?: string, externalMessageId?: string): Promise<Message>;
   createMessageWithFile(chatId: number, senderId: number | null, senderType: string, content: string, fileUrl?: string, fileName?: string, fileMeta?: { size?: number; type?: string }): Promise<Message>;
   getMessageByFileUrl(chatId: number, fileUrl: string): Promise<Message | undefined>;
+  updateMessageExternalId(id: number, externalMessageId: string): Promise<void>;
 
   // Notifications
   getNotifications(userId: number): Promise<Notification[]>;
@@ -229,6 +230,12 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(messages.chatId, chatId), eq(messages.fileUrl, fileUrl)))
       .limit(1);
     return message;
+  }
+
+  async updateMessageExternalId(id: number, externalMessageId: string): Promise<void> {
+    await db.update(messages)
+      .set({ externalMessageId })
+      .where(eq(messages.id, id));
   }
 
   // Notifications

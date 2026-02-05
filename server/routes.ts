@@ -1207,16 +1207,22 @@ export async function registerRoutes(
       return res.status(500).json({ error: "Failed to send WhatsApp media message" });
     }
 
-    // Store the message in our database
+    // Store the message in our database with file metadata
     const displayMessage = caption || `[${whatsappMediaType.charAt(0).toUpperCase() + whatsappMediaType.slice(1)} sent]`;
-    const storedMessage = await storage.createMessage(
+    const storedMessage = await storage.createMessageWithFile(
       chatId,
       user.id,
       "agent",
       displayMessage,
       `/api/whatsapp-media/${file.filename}`,
-      whatsappMessageId
+      file.originalname,
+      { type: file.mimetype, size: file.size }
     );
+    
+    // Update the message with external message ID
+    if (whatsappMessageId) {
+      await storage.updateMessageExternalId(storedMessage.id, whatsappMessageId);
+    }
 
     // Update chat's last message
     await storage.updateChat(chatId, {
