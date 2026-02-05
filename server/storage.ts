@@ -47,6 +47,7 @@ export interface IStorage {
   updateShortcut(id: number, updates: Partial<{ command: string; content: string; isActive: boolean }>): Promise<MessageShortcut | undefined>;
   deleteShortcut(id: number): Promise<void>;
   getChatMessages(chatId: number): Promise<Message[]>;
+  getMessage(id: number): Promise<Message | undefined>;
   
   // Delete operations
   deleteMessage(id: number): Promise<void>;
@@ -315,6 +316,11 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(messages)
       .where(eq(messages.chatId, chatId))
       .orderBy(messages.createdAt);
+  }
+
+  async getMessage(id: number): Promise<Message | undefined> {
+    const [message] = await db.select().from(messages).where(eq(messages.id, id));
+    return message;
   }
 
   // Stats

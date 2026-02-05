@@ -541,13 +541,27 @@ export async function registerRoutes(
 
   // Helper function to send WhatsApp message via Cloud API
   // Returns the WhatsApp message ID on success, or null on failure
-  async function sendWhatsAppMessage(to: string, message: string): Promise<string | null> {
+  async function sendWhatsAppMessage(to: string, message: string, replyToExternalId?: string): Promise<string | null> {
     if (!WHATSAPP_PHONE_NUMBER_ID || !WHATSAPP_ACCESS_TOKEN) {
       console.error("WhatsApp API credentials not configured");
       return null;
     }
 
     try {
+      const requestBody: any = {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: formatPhoneForWhatsApp(to),
+        type: "text",
+        text: { body: message },
+      };
+      
+      // Add context for reply if replying to a message
+      if (replyToExternalId) {
+        requestBody.context = { message_id: replyToExternalId };
+        console.log("Sending reply to message:", replyToExternalId);
+      }
+      
       const response = await fetch(
         `${WHATSAPP_API_URL}/${WHATSAPP_PHONE_NUMBER_ID}/messages`,
         {
@@ -556,13 +570,7 @@ export async function registerRoutes(
             "Authorization": `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-            messaging_product: "whatsapp",
-            recipient_type: "individual",
-            to: formatPhoneForWhatsApp(to),
-            type: "text",
-            text: { body: message },
-          }),
+          body: JSON.stringify(requestBody),
         }
       );
 
@@ -794,7 +802,8 @@ export async function registerRoutes(
     mediaId: string,
     caption?: string,
     filename?: string,
-    isVoiceMessage?: boolean
+    isVoiceMessage?: boolean,
+    replyToExternalId?: string
   ): Promise<string | null> {
     if (!WHATSAPP_PHONE_NUMBER_ID || !WHATSAPP_ACCESS_TOKEN) {
       console.error("WhatsApp API credentials not configured");
@@ -816,13 +825,19 @@ export async function registerRoutes(
         mediaPayload.voice = true;
       }
 
-      const requestBody = {
+      const requestBody: any = {
         messaging_product: "whatsapp",
         recipient_type: "individual",
         to: formattedPhone,
         type: mediaType,
         [mediaType]: mediaPayload,
       };
+      
+      // Add context for reply if replying to a message
+      if (replyToExternalId) {
+        requestBody.context = { message_id: replyToExternalId };
+        console.log("Sending media reply to message:", replyToExternalId);
+      }
       
       console.log("WhatsApp media message request:", JSON.stringify(requestBody, null, 2));
       
@@ -1231,8 +1246,18 @@ export async function registerRoutes(
       return res.status(400).json({ error: "Chat has no phone number for WhatsApp" });
     }
 
-    // Send via WhatsApp Cloud API
-    const whatsappMessageId = await sendWhatsAppMessage(chat.clientPhone, message);
+    // Get the external message ID of the message being replied to (for WhatsApp context)
+    let replyToExternalId: string | undefined;
+    if (replyToMessageId) {
+      const originalMessage = await storage.getMessage(replyToMessageId);
+      if (originalMessage?.externalMessageId) {
+        replyToExternalId = originalMessage.externalMessageId;
+        console.log("Reply context - original message external ID:", replyToExternalId);
+      }
+    }
+
+    // Send via WhatsApp Cloud API with reply context
+    const whatsappMessageId = await sendWhatsAppMessage(chat.clientPhone, message, replyToExternalId);
     
     if (!whatsappMessageId) {
       console.error("WhatsApp send failed for chat:", chatId, "to:", chat.clientPhone);
@@ -1323,6 +1348,16 @@ export async function registerRoutes(
       return res.status(400).json({ error: "Chat has no phone number for WhatsApp" });
     }
 
+    // Get the external message ID for reply context
+    let replyToExternalId: string | undefined;
+    if (replyToId) {
+      const originalMessage = await storage.getMessage(replyToId);
+      if (originalMessage?.externalMessageId) {
+        replyToExternalId = originalMessage.externalMessageId;
+        console.log("Media reply context - original message external ID:", replyToExternalId);
+      }
+    }
+
     // Determine media type from file mimetype
     let whatsappMediaType: "image" | "audio" | "document" | "video" = "document";
     let isVoiceMessage = false;
@@ -1366,7 +1401,8 @@ export async function registerRoutes(
       mediaId,
       caption,
       file.originalname,
-      isVoiceMessage
+      isVoiceMessage,
+      replyToExternalId
     );
 
     if (!whatsappMessageId) {
