@@ -33,7 +33,6 @@ import {
   Play,
   Pause,
   Square,
-  Package,
   Plus,
   Trash2,
   Star,
@@ -41,6 +40,9 @@ import {
   Lock,
   ChevronDown,
   Download,
+  MapPin,
+  UserCircle,
+  Upload,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -52,7 +54,7 @@ import {
 import { format, isToday, isYesterday, isSameDay } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { Chat, Message, User, MessageShortcut, Order, Catalog } from "@shared/schema";
+import type { Chat, Message, User, MessageShortcut, Order } from "@shared/schema";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
@@ -320,7 +322,7 @@ function MessageBubble({
 }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const isOutgoing = message.senderType === "user";
+  const isOutgoing = message.senderType === "agent";
 
   const formatTime = (date: Date | string | null) => {
     if (!date) return "";
@@ -443,6 +445,90 @@ function MessageBubble({
       );
     }
 
+    // Try to parse special message types (location, contacts, reaction)
+    try {
+      const parsed = JSON.parse(message.content);
+      
+      if (parsed.type === "location") {
+        return (
+          <div className="min-w-[200px]">
+            <a
+              href={`https://www.google.com/maps?q=${parsed.latitude},${parsed.longitude}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block"
+            >
+              <div className="bg-whatsapp-bg-dark rounded-lg overflow-hidden">
+                <img
+                  src={`https://maps.googleapis.com/maps/api/staticmap?center=${parsed.latitude},${parsed.longitude}&zoom=15&size=280x150&markers=color:red%7C${parsed.latitude},${parsed.longitude}&key=AIzaSyBFw0Qbyq9zTFTd-tUY6dZWTgaQzuU17R8`}
+                  alt="Location"
+                  className="w-full h-32 object-cover"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+                <div className="p-2">
+                  <div className="flex items-center gap-2 text-whatsapp-text-primary">
+                    <MapPin className="h-4 w-4 text-red-500" />
+                    <span className="text-sm font-medium">{parsed.name || "Location"}</span>
+                  </div>
+                  {parsed.address && (
+                    <p className="text-xs text-whatsapp-text-secondary mt-1 truncate">{parsed.address}</p>
+                  )}
+                </div>
+              </div>
+            </a>
+            <div className="flex items-center justify-end gap-1 mt-1">
+              <span className="text-xs text-whatsapp-text-secondary">
+                {formatTime(message.createdAt)}
+              </span>
+              {getStatusIcon()}
+            </div>
+          </div>
+        );
+      }
+      
+      if (parsed.type === "contacts") {
+        return (
+          <div className="min-w-[200px]">
+            {parsed.contacts.map((contact: any, idx: number) => (
+              <div key={idx} className="flex items-center gap-3 p-2 bg-whatsapp-bg-dark rounded-lg mb-2">
+                <div className="h-10 w-10 rounded-full bg-whatsapp-green flex items-center justify-center">
+                  <UserCircle className="h-6 w-6 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-whatsapp-text-primary">{contact.name}</div>
+                  {contact.phones && contact.phones.length > 0 && (
+                    <div className="text-xs text-whatsapp-text-secondary">{contact.phones[0]}</div>
+                  )}
+                </div>
+              </div>
+            ))}
+            <div className="flex items-center justify-end gap-1 mt-1">
+              <span className="text-xs text-whatsapp-text-secondary">
+                {formatTime(message.createdAt)}
+              </span>
+              {getStatusIcon()}
+            </div>
+          </div>
+        );
+      }
+      
+      if (parsed.type === "reaction") {
+        return (
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">{parsed.emoji}</span>
+            <span className="text-xs text-whatsapp-text-secondary italic">reacted</span>
+            <span className="text-xs text-whatsapp-text-secondary">
+              {formatTime(message.createdAt)}
+            </span>
+          </div>
+        );
+      }
+    } catch {
+      // Not a special message type, render as normal text
+    }
+
     return (
       <>
         <p className="text-sm whitespace-pre-wrap break-words">
@@ -552,11 +638,11 @@ export default function WhatsAppPage() {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
-  const [showCatalogDialog, setShowCatalogDialog] = useState(false);
   const [showContactInfo, setShowContactInfo] = useState(false);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [renameChatName, setRenameChatName] = useState("");
   const [showDeleteChatConfirm, setShowDeleteChatConfirm] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -588,10 +674,6 @@ export default function WhatsAppPage() {
 
   const { data: shortcuts } = useQuery<MessageShortcut[]>({
     queryKey: ["/api/shortcuts"],
-  });
-
-  const { data: catalogItems } = useQuery<Catalog[]>({
-    queryKey: ["/api/catalogs"],
   });
 
   const { data: orders } = useQuery<Order[]>({
@@ -956,6 +1038,31 @@ export default function WhatsAppPage() {
     }
   };
 
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isDragging) setIsDragging(true);
+  }, [isDragging]);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.currentTarget === e.target) {
+      setIsDragging(false);
+    }
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      setSelectedFile(files[0]);
+    }
+  }, []);
+
   const toggleDesigner = (designerId: string) => {
     setExpandedDesigners(prev => 
       prev.includes(designerId) 
@@ -1283,15 +1390,30 @@ export default function WhatsAppPage() {
           </div>
 
           {/* Messages */}
-          <ScrollArea 
-            className="flex-1 px-16 py-4"
-            style={{ 
-              backgroundImage: `url(${chatBgPattern})`,
-              backgroundSize: "cover",
-              backgroundPosition: "center"
-            }}
+          <div 
+            className="flex-1 relative"
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
           >
-            <div className="space-y-4">
+            {isDragging && (
+              <div className="absolute inset-0 z-50 bg-whatsapp-bg-chat/90 flex items-center justify-center border-2 border-dashed border-whatsapp-green rounded-lg">
+                <div className="text-center">
+                  <Upload className="h-16 w-16 text-whatsapp-green mx-auto mb-4" />
+                  <p className="text-lg font-medium text-whatsapp-text-primary">Drop files here to send</p>
+                  <p className="text-sm text-whatsapp-text-secondary">Images, Documents, Videos</p>
+                </div>
+              </div>
+            )}
+            <ScrollArea 
+              className="h-full px-16 py-4"
+              style={{ 
+                backgroundImage: `url(${chatBgPattern})`,
+                backgroundSize: "cover",
+                backgroundPosition: "center"
+              }}
+            >
+              <div className="space-y-4">
               {groupedMessages.map((group, groupIndex) => (
                 <div key={groupIndex}>
                   <div className="flex justify-center mb-4">
@@ -1314,6 +1436,7 @@ export default function WhatsAppPage() {
               <div ref={messagesEndRef} />
             </div>
           </ScrollArea>
+          </div>
 
           {/* Input */}
           <div className="relative px-4 py-3 bg-whatsapp-header">
@@ -1450,15 +1573,6 @@ export default function WhatsAppPage() {
                   data-testid="button-attach-file"
                 >
                   <Paperclip className="w-6 h-6" />
-                </Button>
-                <Button 
-                  variant="ghost"
-                  size="icon"
-                  className="text-whatsapp-icon hover:bg-whatsapp-hover"
-                  onClick={() => setShowCatalogDialog(true)}
-                  data-testid="button-catalog"
-                >
-                  <Package className="w-6 h-6" />
                 </Button>
                 <div className="flex-1">
                   <Textarea
@@ -1847,59 +1961,6 @@ export default function WhatsAppPage() {
               </div>
             </div>
           )}
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={showCatalogDialog} onOpenChange={setShowCatalogDialog}>
-        <DialogContent className="border bg-whatsapp-bg-panel border-whatsapp-divider max-w-lg max-h-[80vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle className="text-whatsapp-text-primary">Send Catalog</DialogTitle>
-          </DialogHeader>
-          <ScrollArea className="flex-1 pr-4">
-            <div className="space-y-3">
-              {catalogItems && catalogItems.length > 0 ? catalogItems.map(item => (
-                <button
-                  key={item.id}
-                  className="w-full p-3 rounded-lg text-left hover:bg-whatsapp-hover transition-colors flex items-start gap-3 bg-whatsapp-bg-input"
-                  onClick={() => {
-                    if (selectedChat) {
-                      const catalogMessage = `*${item.name}*\n${item.description || ''}\n\nPrice: PKR ${item.price.toLocaleString()}`;
-                      sendMessageMutation.mutate({ 
-                        chatId: selectedChat.id, 
-                        content: catalogMessage,
-                        useWhatsApp: !!selectedChat.clientPhone
-                      });
-                      setShowCatalogDialog(false);
-                    }
-                  }}
-                  data-testid={`catalog-item-${item.id}`}
-                >
-                  {item.imageUrl ? (
-                    <img 
-                      src={item.imageUrl} 
-                      alt={item.name}
-                      className="w-16 h-16 object-cover rounded-md flex-shrink-0"
-                    />
-                  ) : (
-                    <div className="w-16 h-16 rounded-md flex items-center justify-center flex-shrink-0 bg-whatsapp-bg-dark">
-                      <Package className="w-6 h-6 text-whatsapp-text-secondary" />
-                    </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-whatsapp-text-primary">{item.name}</div>
-                    <div className="text-sm text-whatsapp-text-secondary truncate">{item.description || ''}</div>
-                    <div className="text-whatsapp-green font-medium mt-1">PKR {item.price.toLocaleString()}</div>
-                  </div>
-                </button>
-              )) : (
-                <div className="text-center py-8 text-whatsapp-text-secondary">
-                  <Package className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                  <p>No catalog items available</p>
-                  <p className="text-sm mt-1">Ask admin to add items in Catalog settings</p>
-                </div>
-              )}
-            </div>
-          </ScrollArea>
         </DialogContent>
       </Dialog>
 

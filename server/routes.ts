@@ -969,6 +969,74 @@ export async function registerRoutes(
                   } else {
                     messageContent = "[Video received]";
                   }
+                } else if (messageType === "sticker") {
+                  const mediaId = message.sticker?.id;
+                  if (mediaId) {
+                    const mediaData = await downloadWhatsAppMedia(mediaId, "sticker");
+                    if (mediaData) {
+                      fileUrl = mediaData.url;
+                      fileName = mediaData.fileName || "sticker.webp";
+                      fileMimeType = mediaData.mimeType || "image/webp";
+                      messageContent = "[Sticker]";
+                    } else {
+                      messageContent = "[Sticker - download failed]";
+                    }
+                  } else {
+                    messageContent = "[Sticker]";
+                  }
+                } else if (messageType === "location") {
+                  const location = message.location;
+                  if (location) {
+                    const lat = location.latitude;
+                    const lng = location.longitude;
+                    const name = location.name || "";
+                    const address = location.address || "";
+                    messageContent = JSON.stringify({
+                      type: "location",
+                      latitude: lat,
+                      longitude: lng,
+                      name: name,
+                      address: address
+                    });
+                  } else {
+                    messageContent = "[Location received]";
+                  }
+                } else if (messageType === "contacts") {
+                  const contactsData = message.contacts;
+                  if (contactsData && contactsData.length > 0) {
+                    const contactInfo = contactsData.map((c: any) => ({
+                      name: c.name?.formatted_name || "Unknown",
+                      phones: c.phones?.map((p: any) => p.phone) || []
+                    }));
+                    messageContent = JSON.stringify({
+                      type: "contacts",
+                      contacts: contactInfo
+                    });
+                  } else {
+                    messageContent = "[Contact received]";
+                  }
+                } else if (messageType === "reaction") {
+                  const reaction = message.reaction;
+                  if (reaction) {
+                    messageContent = JSON.stringify({
+                      type: "reaction",
+                      emoji: reaction.emoji,
+                      messageId: reaction.message_id
+                    });
+                  } else {
+                    messageContent = "[Reaction]";
+                  }
+                } else if (messageType === "button") {
+                  messageContent = message.button?.text || "[Button response]";
+                } else if (messageType === "interactive") {
+                  const interactive = message.interactive;
+                  if (interactive?.type === "button_reply") {
+                    messageContent = interactive.button_reply?.title || "[Button selected]";
+                  } else if (interactive?.type === "list_reply") {
+                    messageContent = interactive.list_reply?.title || "[List item selected]";
+                  } else {
+                    messageContent = "[Interactive response]";
+                  }
                 } else {
                   messageContent = `[${messageType} message received]`;
                 }
