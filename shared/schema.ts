@@ -97,6 +97,8 @@ export const messages = pgTable("messages", {
   fileMeta: jsonb("file_meta").$type<{ size?: number; type?: string }>(), // File metadata
   externalMessageId: text("external_message_id"), // WhatsApp message ID
   isRead: boolean("is_read").default(false),
+  replyToMessageId: integer("reply_to_message_id"), // For reply/quote feature
+  reactions: jsonb("reactions").$type<{ emoji: string; senderPhone?: string }[]>(), // Reactions received on this message
   createdAt: timestamp("created_at").defaultNow(),
 });
 

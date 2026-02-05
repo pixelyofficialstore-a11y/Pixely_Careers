@@ -793,7 +793,8 @@ export async function registerRoutes(
     mediaType: "image" | "audio" | "document" | "video",
     mediaId: string,
     caption?: string,
-    filename?: string
+    filename?: string,
+    isVoiceMessage?: boolean
   ): Promise<string | null> {
     if (!WHATSAPP_PHONE_NUMBER_ID || !WHATSAPP_ACCESS_TOKEN) {
       console.error("WhatsApp API credentials not configured");
@@ -809,6 +810,10 @@ export async function registerRoutes(
       }
       if (filename && mediaType === "document") {
         mediaPayload.filename = filename;
+      }
+      // Add voice flag for voice messages (required for mobile WhatsApp to display as voice note)
+      if (mediaType === "audio" && isVoiceMessage) {
+        mediaPayload.voice = true;
       }
 
       const requestBody = {
@@ -1063,12 +1068,43 @@ export async function registerRoutes(
                   }
                 } else if (messageType === "reaction") {
                   const reaction = message.reaction;
-                  if (reaction) {
-                    messageContent = JSON.stringify({
-                      type: "reaction",
-                      emoji: reaction.emoji,
-                      messageId: reaction.message_id
-                    });
+                  if (reaction && reaction.message_id) {
+                    // Handle reaction by updating the target message
+                    const targetMessageId = reaction.message_id;
+                    const emoji = reaction.emoji;
+                    
+                    // Find the message that was reacted to
+                    const targetMessages = await db.select().from(messages)
+                      .where(eq(messages.externalMessageId, targetMessageId))
+                      .limit(1);
+                    
+                    if (targetMessages.length > 0) {
+                      const targetMsg = targetMessages[0];
+                      const currentReactions = (targetMsg.reactions as { emoji: string; senderPhone?: string }[] | null) || [];
+                      
+                      if (emoji === "") {
+                        // Remove reaction (empty emoji means reaction removed)
+                        const updatedReactions = currentReactions.filter(r => r.senderPhone !== from);
+                        await db.update(messages)
+                          .set({ reactions: updatedReactions.length > 0 ? updatedReactions : null })
+                          .where(eq(messages.id, targetMsg.id));
+                        console.log(`Removed reaction from message ${targetMessageId}`);
+                      } else {
+                        // Add or update reaction
+                        const existingIndex = currentReactions.findIndex(r => r.senderPhone === from);
+                        if (existingIndex >= 0) {
+                          currentReactions[existingIndex].emoji = emoji;
+                        } else {
+                          currentReactions.push({ emoji, senderPhone: from });
+                        }
+                        await db.update(messages)
+                          .set({ reactions: currentReactions })
+                          .where(eq(messages.id, targetMsg.id));
+                        console.log(`Added reaction ${emoji} to message ${targetMessageId}`);
+                      }
+                    }
+                    // Skip creating a new message for reactions
+                    continue;
                   } else {
                     messageContent = "[Reaction]";
                   }
@@ -1286,10 +1322,13 @@ export async function registerRoutes(
 
     // Determine media type from file mimetype
     let whatsappMediaType: "image" | "audio" | "document" | "video" = "document";
+    let isVoiceMessage = false;
     if (file.mimetype.startsWith('image/')) {
       whatsappMediaType = "image";
     } else if (file.mimetype.startsWith('audio/')) {
       whatsappMediaType = "audio";
+      // Check if this is a voice message (voice_message in filename or webm format)
+      isVoiceMessage = file.originalname.includes('voice_message') || file.mimetype.includes('webm');
     } else if (file.mimetype.startsWith('video/')) {
       whatsappMediaType = "video";
     }
@@ -1323,7 +1362,8 @@ export async function registerRoutes(
       whatsappMediaType,
       mediaId,
       caption,
-      file.originalname
+      file.originalname,
+      isVoiceMessage
     );
 
     if (!whatsappMessageId) {
@@ -1686,20 +1726,82 @@ export async function registerRoutes(
     res.json({ success: true });
   });
 
-  // Delete a message (admin/support only)
+  // Note: WhatsApp Business Cloud API does NOT support deleting sent messages ("delete for everyone")
+  // This is a platform limitation from Meta. Messages can only be deleted locally.
+  // See: https://developers.facebook.com/docs/whatsapp/cloud-api/
+
+  // Helper function to send reaction to a WhatsApp message
+  async function sendWhatsAppReaction(
+    to: string,
+    messageId: string,
+    emoji: string
+  ): Promise<string | null> {
+    if (!WHATSAPP_PHONE_NUMBER_ID || !WHATSAPP_ACCESS_TOKEN) {
+      console.error("WhatsApp API credentials not configured");
+      return null;
+    }
+
+    const formattedPhone = formatPhoneForWhatsApp(to);
+
+    try {
+      const requestBody = {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: formattedPhone,
+        type: "reaction",
+        reaction: {
+          message_id: messageId,
+          emoji: emoji, // Empty string to remove reaction
+        },
+      };
+
+      console.log("Sending WhatsApp reaction:", JSON.stringify(requestBody, null, 2));
+
+      const response = await fetch(
+        `${WHATSAPP_API_URL}/${WHATSAPP_PHONE_NUMBER_ID}/messages`,
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(requestBody),
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.error("WhatsApp reaction error:", error);
+        return null;
+      }
+
+      const result = await response.json();
+      console.log("WhatsApp reaction sent:", result);
+      return result.messages?.[0]?.id || null;
+    } catch (error) {
+      console.error("Failed to send WhatsApp reaction:", error);
+      return null;
+    }
+  }
+
+  // Delete a message (admin/support only) - local deletion only
+  // Note: WhatsApp Business API does not support "delete for everyone"
   app.delete("/api/messages/:id", requireRole(["admin", "support"]), async (req, res) => {
     const messageId = Number(req.params.id);
     
     // Get the message to check if it has a file
     const message = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
-    if (message.length > 0 && message[0].fileUrl) {
+    if (message.length === 0) {
+      return res.sendStatus(404);
+    }
+    
+    const msg = message[0];
+    
+    if (msg.fileUrl) {
       // Delete the file from object storage if it's stored there
-      const fileUrl = message[0].fileUrl;
-      if (fileUrl.startsWith("/objects/")) {
+      if (msg.fileUrl.startsWith("/objects/")) {
         try {
-          // Note: Object storage doesn't need file deletion as files will be garbage collected
-          // But we could implement deleteObject if needed in the future
-          console.log(`Deleting message with file: ${fileUrl}`);
+          console.log(`Deleting message with file: ${msg.fileUrl}`);
         } catch (error) {
           console.error("Error deleting file:", error);
         }
@@ -1708,6 +1810,44 @@ export async function registerRoutes(
     
     await storage.deleteMessage(messageId);
     res.sendStatus(204);
+  });
+
+  // Send a reaction to a message
+  app.post("/api/messages/:id/react", requireRole(["admin", "support"]), async (req, res) => {
+    const messageId = Number(req.params.id);
+    const { emoji } = req.body;
+    const user = req.user as User;
+
+    if (!emoji) {
+      return res.status(400).json({ error: "Emoji is required" });
+    }
+
+    // Get the message
+    const message = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
+    if (message.length === 0) {
+      return res.sendStatus(404);
+    }
+
+    const msg = message[0];
+
+    // Can only react to messages from clients that have a WhatsApp message ID
+    if (!msg.externalMessageId) {
+      return res.status(400).json({ error: "Cannot react to this message - no WhatsApp ID" });
+    }
+
+    // Get the chat to find the phone number
+    const chat = await storage.getChat(msg.chatId);
+    if (!chat || !chat.clientPhone) {
+      return res.status(400).json({ error: "Chat has no phone number" });
+    }
+
+    // Send reaction to WhatsApp
+    const reactionId = await sendWhatsAppReaction(chat.clientPhone, msg.externalMessageId, emoji);
+    if (!reactionId) {
+      return res.status(500).json({ error: "Failed to send reaction" });
+    }
+
+    res.json({ success: true, reactionId });
   });
 
   // Delete a chat (admin only)

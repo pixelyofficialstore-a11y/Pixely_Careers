@@ -316,14 +316,19 @@ function VoiceMessagePlayer({
 
 function MessageBubble({ 
   message, 
-  onDelete 
+  onDelete,
+  onReact
 }: { 
   message: Message; 
   onDelete?: () => void;
+  onReact?: (emoji: string) => void;
 }) {
   const [isPlaying, setIsPlaying] = useState(false);
+  const [showReactionPicker, setShowReactionPicker] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const isOutgoing = message.senderType === "agent";
+  const reactions = (message.reactions as { emoji: string; senderPhone?: string }[] | null) || [];
+  const quickReactions = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
   const formatTime = (date: Date | string | null) => {
     if (!date) return "";
@@ -546,24 +551,76 @@ function MessageBubble({
   };
 
   return (
-    <div className={cn("flex group", isOutgoing ? "justify-end" : "justify-start")}>
-      <div
-        className={cn(
-          "max-w-[65%] px-3 py-2 rounded-lg relative",
-          isOutgoing
-            ? "bg-whatsapp-bubble-out text-white rounded-tr-none"
-            : "bg-whatsapp-bubble-in text-whatsapp-text-primary rounded-tl-none"
+    <div className={cn("flex group relative", isOutgoing ? "justify-end" : "justify-start")}>
+      <div className="relative">
+        <div
+          className={cn(
+            "max-w-[65%] px-3 py-2 rounded-lg relative",
+            isOutgoing
+              ? "bg-whatsapp-bubble-out text-white rounded-tr-none"
+              : "bg-whatsapp-bubble-in text-whatsapp-text-primary rounded-tl-none"
+          )}
+        >
+          {renderContent()}
+        </div>
+        
+        {/* Reactions display */}
+        {reactions.length > 0 && (
+          <div className={cn(
+            "absolute -bottom-3 flex gap-0.5 px-1 py-0.5 bg-whatsapp-bg-dark rounded-full border border-whatsapp-divider shadow-sm",
+            isOutgoing ? "right-2" : "left-2"
+          )}>
+            {reactions.map((r, idx) => (
+              <span key={idx} className="text-sm">{r.emoji}</span>
+            ))}
+          </div>
         )}
-      >
-        {renderContent()}
-        {onDelete && (
-          <button
-            onClick={onDelete}
-            className="absolute -right-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-whatsapp-hover rounded"
-          >
-            <Trash2 className="h-4 w-4 text-red-400" />
-          </button>
-        )}
+        
+        {/* Action buttons on hover */}
+        <div className={cn(
+          "absolute top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1",
+          isOutgoing ? "-left-20" : "-right-20"
+        )}>
+          {/* React button */}
+          {!isOutgoing && onReact && (
+            <div className="relative">
+              <button
+                onClick={() => setShowReactionPicker(!showReactionPicker)}
+                className="p-1 hover:bg-whatsapp-hover rounded"
+                data-testid="button-react-message"
+              >
+                <Smile className="h-4 w-4 text-whatsapp-icon" />
+              </button>
+              {showReactionPicker && (
+                <div className="absolute bottom-full left-0 mb-1 flex gap-1 p-2 bg-whatsapp-bg-panel border border-whatsapp-divider rounded-full shadow-xl z-50">
+                  {quickReactions.map(emoji => (
+                    <button
+                      key={emoji}
+                      className="text-lg hover:scale-125 transition-transform"
+                      onClick={() => {
+                        onReact(emoji);
+                        setShowReactionPicker(false);
+                      }}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          
+          {/* Delete button */}
+          {onDelete && (
+            <button
+              onClick={onDelete}
+              className="p-1 hover:bg-whatsapp-hover rounded"
+              title="Delete message"
+            >
+              <Trash2 className="h-4 w-4 text-red-400" />
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -712,6 +769,21 @@ export default function WhatsAppPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/chats", selectedChat?.id, "messages"] });
       queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
       toast({ title: "Deleted", description: "Message deleted" });
+    },
+  });
+
+  // Note: WhatsApp Business API does not support "delete for everyone"
+  // Messages can only be deleted locally in our system
+
+  const reactToMessageMutation = useMutation({
+    mutationFn: ({ messageId, emoji }: { messageId: number; emoji: string }) =>
+      apiRequest("POST", `/api/messages/${messageId}/react`, { emoji }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chats", selectedChat?.id, "messages"] });
+      toast({ title: "Reacted", description: "Reaction sent" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to send reaction", variant: "destructive" });
     },
   });
 
@@ -1446,12 +1518,15 @@ export default function WhatsAppPage() {
                     </span>
                   </div>
                   
-                  <div className="space-y-1">
+                  <div className="space-y-3">
                     {group.messages.map(message => (
                       <MessageBubble 
                         key={message.id} 
                         message={message}
                         onDelete={isAdminOrSupport ? () => deleteMessageMutation.mutate(message.id) : undefined}
+                        onReact={isAdminOrSupport && message.senderType === "client" && message.externalMessageId 
+                          ? (emoji: string) => reactToMessageMutation.mutate({ messageId: message.id, emoji }) 
+                          : undefined}
                       />
                     ))}
                   </div>
