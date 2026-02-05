@@ -38,6 +38,32 @@
   
   --font-sans: 'Inter', sans-serif;
   --font-display: 'Outfit', sans-serif;
+
+  /* WhatsApp specific colors */
+  --whatsapp-bg-dark: 222 47% 7%;
+  --whatsapp-bg-panel: 222 47% 11%;
+  --whatsapp-bg-chat: 200 19% 18%;
+  --whatsapp-bg-input: 215 28% 17%;
+  --whatsapp-green: 142 70% 45%;
+  --whatsapp-green-dark: 142 50% 35%;
+  --whatsapp-teal: 168 60% 45%;
+  --whatsapp-bubble-out: 142 70% 40%;
+  --whatsapp-bubble-in: 215 28% 20%;
+  --whatsapp-header: 222 47% 11%;
+  --whatsapp-hover: 215 28% 15%;
+  --whatsapp-active: 215 28% 18%;
+  --whatsapp-text-primary: 0 0% 95%;
+  --whatsapp-text-secondary: 0 0% 68%;
+  --whatsapp-icon: 0 0% 68%;
+  --whatsapp-divider: 215 28% 20%;
+  --whatsapp-unread: 142 70% 45%;
+
+  /* Chat tag colors */
+  --tag-new: 48 96% 53%;
+  --tag-working: 211 100% 50%;
+  --tag-pending: 25 95% 53%;
+  --tag-issues: 0 72% 51%;
+  --tag-satisfied: 142 70% 45%;
 }
 
 @layer base {
