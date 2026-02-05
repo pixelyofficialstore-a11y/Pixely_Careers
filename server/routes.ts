@@ -698,8 +698,10 @@ export async function registerRoutes(
     
     try {
       // Convert to OGG with Opus codec - WhatsApp compatible format for voice messages
-      // Requirements: mono audio, 48kHz sample rate, 32kbps bitrate (WhatsApp standard)
-      await execAsync(`ffmpeg -i "${inputPath}" -c:a libopus -b:a 32k -vn -ac 1 -ar 48000 "${outputPath}" -y`);
+      // iOS-compatible parameters: mono audio, 48kHz sample rate, 32kbps bitrate
+      // Critical: -map_metadata -1 strips metadata that can cause iOS playback issues
+      // -vn removes video, -sn removes subtitles, -dn removes data streams
+      await execAsync(`ffmpeg -i "${inputPath}" -vn -sn -dn -map_metadata -1 -c:a libopus -b:a 32k -ac 1 -ar 48000 "${outputPath}" -y`);
       console.log(`Converted audio: ${inputPath} -> ${outputPath}`);
       
       // Verify output file exists and has content
@@ -1090,18 +1092,23 @@ export async function registerRoutes(
                   }
                 } else if (messageType === "reaction") {
                   const reaction = message.reaction;
+                  console.log(`[REACTION] Received reaction webhook:`, JSON.stringify(reaction));
                   if (reaction && reaction.message_id) {
                     // Handle reaction by updating the target message
                     const targetMessageId = reaction.message_id;
                     const emoji = reaction.emoji;
+                    console.log(`[REACTION] Looking for message with externalMessageId: ${targetMessageId}, emoji: ${emoji || '(removed)'}, from: ${from}`);
                     
                     // Find the message that was reacted to
                     const targetMessages = await db.select().from(messages)
                       .where(eq(messages.externalMessageId, targetMessageId))
                       .limit(1);
                     
+                    console.log(`[REACTION] Found ${targetMessages.length} matching messages`);
+                    
                     if (targetMessages.length > 0) {
                       const targetMsg = targetMessages[0];
+                      console.log(`[REACTION] Target message id: ${targetMsg.id}, current reactions:`, JSON.stringify(targetMsg.reactions));
                       const currentReactions = (targetMsg.reactions as { emoji: string; senderPhone?: string }[] | null) || [];
                       
                       if (emoji === "") {
@@ -1110,7 +1117,7 @@ export async function registerRoutes(
                         await db.update(messages)
                           .set({ reactions: updatedReactions.length > 0 ? updatedReactions : null })
                           .where(eq(messages.id, targetMsg.id));
-                        console.log(`Removed reaction from message ${targetMessageId}`);
+                        console.log(`[REACTION] Removed reaction from message ${targetMessageId}, updated reactions:`, JSON.stringify(updatedReactions));
                       } else {
                         // Add or update reaction
                         const existingIndex = currentReactions.findIndex(r => r.senderPhone === from);
@@ -1122,12 +1129,15 @@ export async function registerRoutes(
                         await db.update(messages)
                           .set({ reactions: currentReactions })
                           .where(eq(messages.id, targetMsg.id));
-                        console.log(`Added reaction ${emoji} to message ${targetMessageId}`);
+                        console.log(`[REACTION] Added reaction ${emoji} to message ${targetMessageId}, updated reactions:`, JSON.stringify(currentReactions));
                       }
+                    } else {
+                      console.log(`[REACTION] WARNING: Could not find message with externalMessageId: ${targetMessageId}`);
                     }
                     // Skip creating a new message for reactions
                     continue;
                   } else {
+                    console.log(`[REACTION] Invalid reaction - missing message_id`);
                     messageContent = "[Reaction]";
                   }
                 } else if (messageType === "button") {
