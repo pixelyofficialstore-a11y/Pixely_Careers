@@ -390,6 +390,14 @@ export async function registerRoutes(
 
     res.json(enrichedChats);
   });
+  
+  // Get unread chats count for sidebar badge (must be before :id route)
+  app.get("/api/chats/unread-count", requireAuth, async (req, res) => {
+    const user = req.user as User;
+    const allChats = await storage.getChats(user.role, user.id);
+    const unreadChatsCount = allChats.filter(c => (c.unreadCount || 0) > 0).length;
+    res.json({ count: unreadChatsCount });
+  });
 
   app.get(api.chats.get.path, requireAuth, async (req, res) => {
     const chat = await storage.getChat(Number(req.params.id));
@@ -407,14 +415,6 @@ export async function registerRoutes(
   app.get("/api/whatsapp-analytics", requireRole(["admin"]), async (req, res) => {
     const analytics = await storage.getWhatsAppAnalytics();
     res.json(analytics);
-  });
-  
-  // Get unread chats count for sidebar badge
-  app.get("/api/chats/unread-count", requireAuth, async (req, res) => {
-    const user = req.user as User;
-    const allChats = await storage.getChats(user.role, user.id);
-    const unreadChatsCount = allChats.filter(c => (c.unreadCount || 0) > 0).length;
-    res.json({ count: unreadChatsCount });
   });
 
   app.post(api.chats.sendMessage.path, requireAuth, async (req, res) => {
@@ -1926,6 +1926,12 @@ export async function registerRoutes(
     if (!reactionId) {
       return res.status(500).json({ error: "Failed to send reaction" });
     }
+    
+    // Store the reaction in the database
+    const existingReactions = (msg.reactions as { emoji: string; senderPhone?: string }[] | null) || [];
+    const newReaction = { emoji, senderPhone: "agent" };
+    const updatedReactions = [...existingReactions.filter(r => r.senderPhone !== "agent"), newReaction];
+    await db.update(messages).set({ reactions: updatedReactions }).where(eq(messages.id, messageId));
 
     res.json({ success: true, reactionId });
   });
