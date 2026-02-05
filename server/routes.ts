@@ -680,7 +680,7 @@ export async function registerRoutes(
     }
   }
 
-  // Helper function to convert audio from webm to ogg using ffmpeg
+  // Helper function to convert audio from webm to ogg using ffmpeg (WhatsApp compatible)
   async function convertAudioToOgg(inputPath: string): Promise<{ path: string; mimeType: string } | null> {
     const { exec } = await import('child_process');
     const { promisify } = await import('util');
@@ -689,10 +689,21 @@ export async function registerRoutes(
     const outputPath = inputPath.replace(/\.webm$/, '.ogg');
     
     try {
-      // Convert webm to ogg using ffmpeg
-      await execAsync(`ffmpeg -i "${inputPath}" -acodec libopus -b:a 64k "${outputPath}" -y`);
+      // Convert to OGG with Opus codec - WhatsApp compatible format
+      // Requirements: mono audio, 48kHz sample rate, proper bitrate
+      await execAsync(`ffmpeg -i "${inputPath}" -acodec libopus -ac 1 -ar 48000 -b:a 128k -vbr on -compression_level 10 -application voip "${outputPath}" -y`);
       console.log(`Converted audio: ${inputPath} -> ${outputPath}`);
-      return { path: outputPath, mimeType: 'audio/ogg' };
+      
+      // Verify output file exists and has content
+      if (fs.existsSync(outputPath)) {
+        const stats = fs.statSync(outputPath);
+        console.log(`Converted file size: ${stats.size} bytes`);
+        if (stats.size > 0) {
+          return { path: outputPath, mimeType: 'audio/ogg; codecs=opus' };
+        }
+      }
+      console.error("Converted audio file is empty or missing");
+      return null;
     } catch (error) {
       console.error("Failed to convert audio:", error);
       return null;
@@ -1454,7 +1465,7 @@ export async function registerRoutes(
 
   const catalogUpload = multer({
     storage: catalogImageStorage,
-    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+    limits: { fileSize: 20 * 1024 * 1024 }, // 20MB limit for high-quality product images
     fileFilter: (req, file, cb) => {
       const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
       if (allowedTypes.includes(file.mimetype)) {
