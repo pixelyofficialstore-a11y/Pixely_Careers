@@ -752,6 +752,22 @@ export default function WhatsAppPage() {
     mutationFn: async ({ chatId, content, file, useWhatsApp }: { chatId: number; content: string; file?: File; useWhatsApp?: boolean }) => {
       if (file) {
         const formData = new FormData();
+        // For WhatsApp chats, use the WhatsApp media endpoint
+        if (useWhatsApp) {
+          formData.append("media", file);
+          if (content && content !== "Sent a file") {
+            formData.append("caption", content);
+          }
+          return fetch(`/api/chats/${chatId}/send-whatsapp-media`, {
+            method: "POST",
+            body: formData,
+            credentials: "include",
+          }).then(res => {
+            if (!res.ok) throw new Error("Failed to send file to WhatsApp");
+            return res.json();
+          });
+        }
+        // For internal chats, use the internal upload endpoint
         formData.append("file", file);
         formData.append("content", content);
         return fetch(`/api/chats/${chatId}/messages/upload`, {

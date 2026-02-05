@@ -1540,10 +1540,11 @@ export async function registerRoutes(
     const file = req.file;
     
     // Create message with file info (storage method handles chat metadata update)
+    // senderType should be "agent" since it's the CRM user sending to the client
     const message = await storage.createMessageWithFile(
       chatId, 
       user.id, 
-      "user", 
+      "agent", 
       content,
       file ? `/api/files/${chatId}/${file.filename}` : undefined,
       file?.originalname,
