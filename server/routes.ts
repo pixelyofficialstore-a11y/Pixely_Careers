@@ -794,6 +794,16 @@ export async function registerRoutes(
         mediaPayload.filename = filename;
       }
 
+      const requestBody = {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: formattedPhone,
+        type: mediaType,
+        [mediaType]: mediaPayload,
+      };
+      
+      console.log("WhatsApp media message request:", JSON.stringify(requestBody, null, 2));
+      
       const response = await fetch(
         `${WHATSAPP_API_URL}/${WHATSAPP_PHONE_NUMBER_ID}/messages`,
         {
@@ -802,19 +812,13 @@ export async function registerRoutes(
             "Authorization": `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-            messaging_product: "whatsapp",
-            recipient_type: "individual",
-            to: formattedPhone,
-            type: mediaType,
-            [mediaType]: mediaPayload,
-          }),
+          body: JSON.stringify(requestBody),
         }
       );
 
       if (!response.ok) {
         const error = await response.json();
-        console.error("WhatsApp media message error:", error);
+        console.error("WhatsApp media message error:", JSON.stringify(error, null, 2));
         return null;
       }
 
@@ -1288,6 +1292,14 @@ export async function registerRoutes(
     }
 
     // Send media via WhatsApp
+    console.log("Sending media to WhatsApp:", {
+      phone: chat.clientPhone,
+      mediaType: whatsappMediaType,
+      mediaId,
+      caption,
+      filename: file.originalname
+    });
+    
     const whatsappMessageId = await sendWhatsAppMediaMessage(
       chat.clientPhone,
       whatsappMediaType,
@@ -1297,8 +1309,11 @@ export async function registerRoutes(
     );
 
     if (!whatsappMessageId) {
+      console.error("Failed to send media message - no message ID returned");
       return res.status(500).json({ error: "Failed to send WhatsApp media message" });
     }
+    
+    console.log("Media message sent successfully:", whatsappMessageId);
 
     // Store the message in our database with file metadata
     const displayMessage = caption || `[${whatsappMediaType.charAt(0).toUpperCase() + whatsappMediaType.slice(1)} sent]`;
