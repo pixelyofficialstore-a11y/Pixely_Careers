@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import chatBgPattern from "@assets/d36bcceceaa1d390489ec70d93154311_1770214551405.jpg";
 import { useQuery, useMutation, keepPreviousData } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
@@ -181,6 +181,136 @@ function ChatListItem({
   );
 }
 
+// WhatsApp-style voice message player with waveform visualization
+function VoiceMessagePlayer({ 
+  message, 
+  isOutgoing,
+  formatTime,
+  getStatusIcon
+}: { 
+  message: Message;
+  isOutgoing: boolean;
+  formatTime: (date: Date | string) => string;
+  getStatusIcon: () => React.ReactNode;
+}) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  
+  // Generate consistent waveform bars based on message ID
+  const waveformBars = useMemo(() => {
+    const seed = message.id;
+    const bars: number[] = [];
+    for (let i = 0; i < 35; i++) {
+      // Create pseudo-random heights based on message ID
+      const hash = ((seed * (i + 1) * 9301 + 49297) % 233280) / 233280;
+      bars.push(Math.floor(hash * 18) + 4);
+    }
+    return bars;
+  }, [message.id]);
+  
+  const togglePlay = () => {
+    if (!audioRef.current) return;
+    if (isPlaying) {
+      audioRef.current.pause();
+    } else {
+      audioRef.current.play();
+    }
+    setIsPlaying(!isPlaying);
+  };
+  
+  const handleTimeUpdate = () => {
+    if (audioRef.current) {
+      setCurrentTime(audioRef.current.currentTime);
+    }
+  };
+  
+  const handleLoadedMetadata = () => {
+    if (audioRef.current) {
+      setDuration(audioRef.current.duration);
+    }
+  };
+  
+  const handleEnded = () => {
+    setIsPlaying(false);
+    setCurrentTime(0);
+  };
+  
+  const formatDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+  
+  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const playedBars = Math.floor((progress / 100) * waveformBars.length);
+  
+  return (
+    <div className="flex items-center gap-2 min-w-[280px] max-w-[320px]">
+      <audio 
+        ref={audioRef}
+        src={message.fileUrl || undefined}
+        onTimeUpdate={handleTimeUpdate}
+        onLoadedMetadata={handleLoadedMetadata}
+        onEnded={handleEnded}
+        preload="metadata"
+      />
+      
+      {/* Play/Pause Button */}
+      <button 
+        onClick={togglePlay}
+        className="h-11 w-11 rounded-full bg-whatsapp-green flex items-center justify-center flex-shrink-0 hover:bg-whatsapp-green/90 transition-colors"
+        data-testid="button-voice-play"
+      >
+        {isPlaying ? (
+          <Pause className="h-5 w-5 text-white" />
+        ) : (
+          <Play className="h-5 w-5 text-white ml-0.5" />
+        )}
+      </button>
+      
+      {/* Waveform and Duration */}
+      <div className="flex-1 flex flex-col gap-1">
+        {/* Waveform Bars */}
+        <div className="flex items-center gap-[2px] h-6">
+          {waveformBars.map((height, i) => (
+            <div
+              key={i}
+              className={`w-[3px] rounded-full transition-colors ${
+                i < playedBars 
+                  ? 'bg-whatsapp-green' 
+                  : isOutgoing 
+                    ? 'bg-[#8696a0]' 
+                    : 'bg-[#8696a0]'
+              }`}
+              style={{ height: `${height}px` }}
+            />
+          ))}
+        </div>
+        
+        {/* Duration / Current Time */}
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] text-whatsapp-text-secondary">
+            {isPlaying || currentTime > 0 
+              ? formatDuration(currentTime) 
+              : duration > 0 
+                ? formatDuration(duration)
+                : '0:00'
+            }
+          </span>
+          <div className="flex items-center gap-1">
+            <span className="text-[11px] text-whatsapp-text-secondary">
+              {formatTime(message.createdAt)}
+            </span>
+            {isOutgoing && getStatusIcon()}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MessageBubble({ 
   message, 
   onDelete 
@@ -277,40 +407,12 @@ function MessageBubble({
 
       if (isAudioFile(message.fileUrl, message.fileName, message.fileMeta)) {
         return (
-          <div className="flex items-center gap-3 min-w-[240px]">
-            <audio 
-              ref={audioRef} 
-              src={message.fileUrl} 
-              onEnded={() => setIsPlaying(false)}
-            />
-            <button 
-              onClick={toggleAudio}
-              className="h-10 w-10 rounded-full bg-whatsapp-green flex items-center justify-center flex-shrink-0"
-            >
-              {isPlaying ? (
-                <Pause className="h-5 w-5 text-white" />
-              ) : (
-                <Play className="h-5 w-5 text-white ml-0.5" />
-              )}
-            </button>
-            <div className="flex-1">
-              <div className="flex items-center gap-0.5 h-6">
-                {Array.from({ length: 30 }).map((_, i) => (
-                  <div
-                    key={i}
-                    className="w-1 bg-whatsapp-text-secondary rounded-full"
-                    style={{ height: `${Math.random() * 16 + 4}px` }}
-                  />
-                ))}
-              </div>
-            </div>
-            <div className="flex items-center gap-1">
-              <span className="text-xs text-whatsapp-text-secondary">
-                {formatTime(message.createdAt)}
-              </span>
-              {getStatusIcon()}
-            </div>
-          </div>
+          <VoiceMessagePlayer 
+            message={message} 
+            isOutgoing={isOutgoing} 
+            formatTime={formatTime}
+            getStatusIcon={getStatusIcon}
+          />
         );
       }
 
