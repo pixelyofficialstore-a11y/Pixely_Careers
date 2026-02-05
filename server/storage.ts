@@ -183,7 +183,7 @@ export class DatabaseStorage implements IStorage {
     return updatedChat;
   }
 
-  async createMessage(chatId: number, senderId: number | null, senderType: string, content: string, fileUrl?: string, externalMessageId?: string): Promise<Message> {
+  async createMessage(chatId: number, senderId: number | null, senderType: string, content: string, fileUrl?: string, externalMessageId?: string, replyToMessageId?: number): Promise<Message> {
     const [message] = await db.insert(messages).values({
       chatId,
       senderId,
@@ -191,6 +191,7 @@ export class DatabaseStorage implements IStorage {
       content,
       fileUrl: fileUrl || null,
       externalMessageId: externalMessageId || null,
+      replyToMessageId: replyToMessageId || null,
     }).returning();
 
     // Update chat last message
@@ -203,7 +204,7 @@ export class DatabaseStorage implements IStorage {
     return message;
   }
 
-  async createMessageWithFile(chatId: number, senderId: number | null, senderType: string, content: string, fileUrl?: string, fileName?: string, fileMeta?: { size?: number; type?: string }): Promise<Message> {
+  async createMessageWithFile(chatId: number, senderId: number | null, senderType: string, content: string, fileUrl?: string, fileName?: string, fileMeta?: { size?: number; type?: string }, replyToMessageId?: number): Promise<Message> {
     const [message] = await db.insert(messages).values({
       chatId,
       senderId,
@@ -213,6 +214,7 @@ export class DatabaseStorage implements IStorage {
       fileUrl: fileUrl || null,
       fileName: fileName || null,
       fileMeta: fileMeta || null,
+      replyToMessageId: replyToMessageId || null,
     }).returning();
 
     // Update chat metadata (same as createMessage)

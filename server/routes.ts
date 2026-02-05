@@ -1201,7 +1201,8 @@ export async function registerRoutes(
 
   // Zod schema for WhatsApp message sending
   const sendWhatsAppSchema = z.object({
-    message: z.string().min(1, "Message cannot be empty").max(4096, "Message too long")
+    message: z.string().min(1, "Message cannot be empty").max(4096, "Message too long"),
+    replyToMessageId: z.number().optional()
   });
 
   // Endpoint to send WhatsApp message (called when staff sends message in UI)
@@ -1214,7 +1215,7 @@ export async function registerRoutes(
     if (!parseResult.success) {
       return res.status(400).json({ error: parseResult.error.errors[0]?.message || "Invalid request" });
     }
-    const { message } = parseResult.data;
+    const { message, replyToMessageId } = parseResult.data;
 
     const chat = await storage.getChat(chatId);
     if (!chat) {
@@ -1245,7 +1246,8 @@ export async function registerRoutes(
       "agent",
       message,
       undefined, // No file
-      whatsappMessageId // Store the WhatsApp message ID for tracking
+      whatsappMessageId, // Store the WhatsApp message ID for tracking
+      replyToMessageId // Store the reply reference
     );
 
     // Update chat's last message
@@ -1299,8 +1301,9 @@ export async function registerRoutes(
   app.post("/api/chats/:id/send-whatsapp-media", requireAuth, whatsappMediaUpload.single('media'), async (req: Request, res: Response) => {
     const chatId = Number(req.params.id);
     const user = req.user as User;
-    const { caption, mediaType } = req.body;
+    const { caption, mediaType, replyToMessageId } = req.body;
     const file = req.file;
+    const replyToId = replyToMessageId ? Number(replyToMessageId) : undefined;
 
     if (!file) {
       return res.status(400).json({ error: "No media file provided" });
@@ -1382,7 +1385,8 @@ export async function registerRoutes(
       displayMessage,
       `/api/whatsapp-media/${file.filename}`,
       file.originalname,
-      { type: file.mimetype, size: file.size }
+      { type: file.mimetype, size: file.size },
+      replyToId
     );
     
     // Update the message with external message ID
@@ -1596,6 +1600,7 @@ export async function registerRoutes(
     
     const content = req.body?.content || "Sent a file";
     const file = req.file;
+    const replyToMessageId = req.body?.replyToMessageId ? Number(req.body.replyToMessageId) : undefined;
     
     // Create message with file info (storage method handles chat metadata update)
     // senderType should be "agent" since it's the CRM user sending to the client
@@ -1606,7 +1611,8 @@ export async function registerRoutes(
       content,
       file ? `/api/files/${chatId}/${file.filename}` : undefined,
       file?.originalname,
-      file ? { size: file.size, type: file.mimetype } : undefined
+      file ? { size: file.size, type: file.mimetype } : undefined,
+      replyToMessageId
     );
     
     res.status(201).json(message);

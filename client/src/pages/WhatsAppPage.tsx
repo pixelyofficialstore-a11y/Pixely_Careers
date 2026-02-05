@@ -44,6 +44,7 @@ import {
   UserCircle,
   Upload,
   ShoppingBag,
+  Reply,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -317,11 +318,15 @@ function VoiceMessagePlayer({
 function MessageBubble({ 
   message, 
   onDelete,
-  onReact
+  onReact,
+  onReply,
+  replyToMessage
 }: { 
   message: Message; 
   onDelete?: () => void;
   onReact?: (emoji: string) => void;
+  onReply?: () => void;
+  replyToMessage?: Message | null;
 }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [showReactionPicker, setShowReactionPicker] = useState(false);
@@ -551,42 +556,72 @@ function MessageBubble({
   };
 
   return (
-    <div className={cn("flex group relative", isOutgoing ? "justify-end" : "justify-start")}>
-      <div className="relative">
-        <div
-          className={cn(
-            "max-w-[65%] px-3 py-2 rounded-lg relative",
-            isOutgoing
-              ? "bg-whatsapp-bubble-out text-white rounded-tr-none"
-              : "bg-whatsapp-bubble-in text-whatsapp-text-primary rounded-tl-none"
+    <div className={cn("flex group", isOutgoing ? "justify-end" : "justify-start", "px-4")}>
+      <div className={cn("flex items-center gap-1 max-w-[75%]", isOutgoing ? "flex-row-reverse" : "flex-row")}>
+        {/* Message bubble */}
+        <div className="relative">
+          <div
+            className={cn(
+              "px-3 py-2 rounded-lg",
+              isOutgoing
+                ? "bg-whatsapp-bubble-out text-white rounded-tr-none"
+                : "bg-whatsapp-bubble-in text-whatsapp-text-primary rounded-tl-none"
+            )}
+          >
+            {/* Quoted message */}
+            {replyToMessage && (
+              <div className={cn(
+                "mb-2 p-2 rounded border-l-4 text-sm",
+                isOutgoing 
+                  ? "bg-[#025c4c] border-[#25d366]" 
+                  : "bg-[#1e2a30] border-whatsapp-green"
+              )}>
+                <div className="font-medium text-xs mb-1 text-whatsapp-green">
+                  {replyToMessage.senderType === "agent" ? "You" : "Client"}
+                </div>
+                <div className="text-whatsapp-text-secondary line-clamp-2">
+                  {replyToMessage.messageType === "file" 
+                    ? (replyToMessage.fileName || "File") 
+                    : replyToMessage.content}
+                </div>
+              </div>
+            )}
+            {renderContent()}
+          </div>
+          
+          {/* Reactions display */}
+          {reactions.length > 0 && (
+            <div className={cn(
+              "absolute -bottom-3 flex gap-0.5 px-1 py-0.5 bg-whatsapp-bg-dark rounded-full border border-whatsapp-divider shadow-sm",
+              isOutgoing ? "right-2" : "left-2"
+            )}>
+              {reactions.map((r, idx) => (
+                <span key={idx} className="text-sm">{r.emoji}</span>
+              ))}
+            </div>
           )}
-        >
-          {renderContent()}
         </div>
         
-        {/* Reactions display */}
-        {reactions.length > 0 && (
-          <div className={cn(
-            "absolute -bottom-3 flex gap-0.5 px-1 py-0.5 bg-whatsapp-bg-dark rounded-full border border-whatsapp-divider shadow-sm",
-            isOutgoing ? "right-2" : "left-2"
-          )}>
-            {reactions.map((r, idx) => (
-              <span key={idx} className="text-sm">{r.emoji}</span>
-            ))}
-          </div>
-        )}
-        
-        {/* Action buttons on hover */}
-        <div className={cn(
-          "absolute top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1",
-          isOutgoing ? "-left-20" : "-right-20"
-        )}>
-          {/* React button */}
+        {/* Action buttons on hover - now properly aligned next to bubble */}
+        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 flex-shrink-0">
+          {/* Reply button */}
+          {onReply && (
+            <button
+              onClick={onReply}
+              className="p-1.5 hover:bg-whatsapp-hover rounded"
+              title="Reply"
+              data-testid="button-reply-message"
+            >
+              <Reply className="h-4 w-4 text-whatsapp-icon" />
+            </button>
+          )}
+          
+          {/* React button for incoming messages */}
           {!isOutgoing && onReact && (
             <div className="relative">
               <button
                 onClick={() => setShowReactionPicker(!showReactionPicker)}
-                className="p-1 hover:bg-whatsapp-hover rounded"
+                className="p-1.5 hover:bg-whatsapp-hover rounded"
                 data-testid="button-react-message"
               >
                 <Smile className="h-4 w-4 text-whatsapp-icon" />
@@ -614,7 +649,7 @@ function MessageBubble({
           {onDelete && (
             <button
               onClick={onDelete}
-              className="p-1 hover:bg-whatsapp-hover rounded"
+              className="p-1.5 hover:bg-whatsapp-hover rounded"
               title="Delete message"
             >
               <Trash2 className="h-4 w-4 text-red-400" />
@@ -702,6 +737,7 @@ export default function WhatsAppPage() {
   const [renameChatName, setRenameChatName] = useState("");
   const [showDeleteChatConfirm, setShowDeleteChatConfirm] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [replyToMessage, setReplyToMessage] = useState<Message | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -829,7 +865,7 @@ export default function WhatsAppPage() {
   });
 
   const sendMessageMutation = useMutation({
-    mutationFn: async ({ chatId, content, file, useWhatsApp }: { chatId: number; content: string; file?: File; useWhatsApp?: boolean }) => {
+    mutationFn: async ({ chatId, content, file, useWhatsApp, replyToId }: { chatId: number; content: string; file?: File; useWhatsApp?: boolean; replyToId?: number }) => {
       if (file) {
         const formData = new FormData();
         // For WhatsApp chats, use the WhatsApp media endpoint
@@ -837,6 +873,9 @@ export default function WhatsAppPage() {
           formData.append("media", file);
           if (content && content !== "Sent a file") {
             formData.append("caption", content);
+          }
+          if (replyToId) {
+            formData.append("replyToMessageId", replyToId.toString());
           }
           return fetch(`/api/chats/${chatId}/send-whatsapp-media`, {
             method: "POST",
@@ -850,6 +889,9 @@ export default function WhatsAppPage() {
         // For internal chats, use the internal upload endpoint
         formData.append("file", file);
         formData.append("content", content);
+        if (replyToId) {
+          formData.append("replyToMessageId", replyToId.toString());
+        }
         return fetch(`/api/chats/${chatId}/messages/upload`, {
           method: "POST",
           body: formData,
@@ -857,9 +899,12 @@ export default function WhatsAppPage() {
         }).then(res => res.json());
       }
       if (useWhatsApp) {
-        return apiRequest("POST", `/api/chats/${chatId}/send-whatsapp`, { message: content });
+        return apiRequest("POST", `/api/chats/${chatId}/send-whatsapp`, { 
+          message: content,
+          replyToMessageId: replyToId 
+        });
       }
-      return apiRequest("POST", `/api/chats/${chatId}/messages`, { content });
+      return apiRequest("POST", `/api/chats/${chatId}/messages`, { content, replyToMessageId: replyToId });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/chats", selectedChat?.id, "messages"] });
@@ -867,6 +912,7 @@ export default function WhatsAppPage() {
       setMessageText("");
       setSelectedFile(null);
       setShowShortcuts(false);
+      setReplyToMessage(null);
     },
     onError: (error: Error) => {
       toast({ 
@@ -1049,7 +1095,8 @@ export default function WhatsAppPage() {
       chatId: selectedChat.id, 
       content: messageText,
       file: selectedFile || undefined,
-      useWhatsApp
+      useWhatsApp,
+      replyToId: replyToMessage?.id
     });
   };
 
@@ -1519,16 +1566,23 @@ export default function WhatsAppPage() {
                   </div>
                   
                   <div className="space-y-3">
-                    {group.messages.map(message => (
-                      <MessageBubble 
-                        key={message.id} 
-                        message={message}
-                        onDelete={isAdminOrSupport ? () => deleteMessageMutation.mutate(message.id) : undefined}
-                        onReact={isAdminOrSupport && message.senderType === "client" && message.externalMessageId 
-                          ? (emoji: string) => reactToMessageMutation.mutate({ messageId: message.id, emoji }) 
-                          : undefined}
-                      />
-                    ))}
+                    {group.messages.map(message => {
+                      const replyMsg = message.replyToMessageId 
+                        ? messages?.find(m => m.id === message.replyToMessageId) 
+                        : null;
+                      return (
+                        <MessageBubble 
+                          key={message.id} 
+                          message={message}
+                          onDelete={isAdminOrSupport ? () => deleteMessageMutation.mutate(message.id) : undefined}
+                          onReact={isAdminOrSupport && message.senderType === "client" && message.externalMessageId 
+                            ? (emoji: string) => reactToMessageMutation.mutate({ messageId: message.id, emoji }) 
+                            : undefined}
+                          onReply={isAdminOrSupport ? () => setReplyToMessage(message) : undefined}
+                          replyToMessage={replyMsg}
+                        />
+                      );
+                    })}
                   </div>
                 </div>
               ))}
@@ -1546,6 +1600,30 @@ export default function WhatsAppPage() {
               onSelect={handleShortcut}
               selectedIndex={selectedShortcutIndex}
             />
+
+            {/* Reply preview bar */}
+            {replyToMessage && (
+              <div className="mb-2 p-2 rounded-lg flex items-center gap-2 bg-whatsapp-bg-input border-l-4 border-whatsapp-green">
+                <Reply className="w-4 h-4 text-whatsapp-green flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-medium text-whatsapp-green">
+                    Replying to {replyToMessage.senderType === "agent" ? "yourself" : "client"}
+                  </div>
+                  <div className="text-sm text-whatsapp-text-secondary truncate">
+                    {replyToMessage.messageType === "file" 
+                      ? (replyToMessage.fileName || "File") 
+                      : replyToMessage.content}
+                  </div>
+                </div>
+                <button
+                  onClick={() => setReplyToMessage(null)}
+                  className="p-1 hover:bg-whatsapp-hover rounded"
+                  data-testid="button-cancel-reply"
+                >
+                  <X className="w-4 h-4 text-whatsapp-text-secondary" />
+                </button>
+              </div>
+            )}
 
             {selectedFile && (
               <div className="mb-2 p-2 rounded-lg flex items-center gap-2 max-w-xs bg-whatsapp-bg-input">
