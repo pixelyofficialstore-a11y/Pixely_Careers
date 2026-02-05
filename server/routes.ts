@@ -610,6 +610,7 @@ export async function registerRoutes(
       const mediaInfo = await mediaInfoResponse.json();
       const mediaUrl = mediaInfo.url;
       const mimeType = mediaInfo.mime_type || "application/octet-stream";
+      console.log(`Media info for ${mediaType}: url=${mediaUrl}, mimeType=${mimeType}`);
 
       // Step 2: Download the actual media file
       const mediaDownloadResponse = await fetch(mediaUrl, {
@@ -625,19 +626,39 @@ export async function registerRoutes(
 
       const mediaBuffer = await mediaDownloadResponse.arrayBuffer();
 
-      // Step 3: Determine file extension
+      // Step 3: Determine file extension based on mime type
       let extension = "bin";
       if (mimeType.includes("audio")) {
-        extension = mimeType.includes("ogg") ? "ogg" : mimeType.includes("mp3") ? "mp3" : "m4a";
+        if (mimeType.includes("ogg") || mimeType.includes("opus")) {
+          extension = "ogg";
+        } else if (mimeType.includes("mp3") || mimeType.includes("mpeg")) {
+          extension = "mp3";
+        } else if (mimeType.includes("webm")) {
+          extension = "webm";
+        } else {
+          extension = "m4a";
+        }
       } else if (mimeType.includes("image")) {
-        extension = mimeType.includes("png") ? "png" : mimeType.includes("gif") ? "gif" : "jpg";
+        if (mimeType.includes("png")) extension = "png";
+        else if (mimeType.includes("gif")) extension = "gif";
+        else if (mimeType.includes("webp")) extension = "webp";
+        else extension = "jpg";
       } else if (mimeType.includes("video")) {
-        extension = "mp4";
-      } else if (mimeType.includes("pdf")) {
+        if (mimeType.includes("3gpp") || mimeType.includes("3gp")) {
+          extension = "3gp";
+        } else if (mimeType.includes("webm")) {
+          extension = "webm";
+        } else {
+          extension = "mp4";
+        }
+      } else if (mimeType.includes("pdf") || mimeType === "application/pdf") {
         extension = "pdf";
-      } else if (mimeType.includes("document") || mimeType.includes("msword")) {
-        extension = "doc";
+      } else if (mimeType.includes("spreadsheet") || mimeType.includes("excel")) {
+        extension = "xlsx";
+      } else if (mimeType.includes("wordprocessingml") || mimeType.includes("document") || mimeType.includes("msword")) {
+        extension = mimeType.includes("openxmlformats") ? "docx" : "doc";
       }
+      console.log(`Determined extension: ${extension} for mimeType: ${mimeType}`);
 
       const fileName = `whatsapp_${mediaType}_${Date.now()}.${extension}`;
       const objectPath = `/objects/uploads/whatsapp/${fileName}`;
@@ -941,8 +962,10 @@ export async function registerRoutes(
                   }
                 } else if (messageType === "document") {
                   const mediaId = message.document?.id;
+                  console.log(`Received document message with mediaId: ${mediaId}, filename: ${message.document?.filename}`);
                   if (mediaId) {
                     const mediaData = await downloadWhatsAppMedia(mediaId, "document");
+                    console.log(`Document download result:`, mediaData);
                     if (mediaData) {
                       fileUrl = mediaData.url;
                       fileName = message.document?.filename || mediaData.fileName;
@@ -956,8 +979,10 @@ export async function registerRoutes(
                   }
                 } else if (messageType === "video") {
                   const mediaId = message.video?.id;
+                  console.log(`Received video message with mediaId: ${mediaId}`);
                   if (mediaId) {
                     const mediaData = await downloadWhatsAppMedia(mediaId, "video");
+                    console.log(`Video download result:`, mediaData);
                     if (mediaData) {
                       fileUrl = mediaData.url;
                       fileName = mediaData.fileName;
