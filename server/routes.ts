@@ -849,6 +849,7 @@ export async function registerRoutes(
                 let messageContent = "";
                 let fileUrl: string | undefined;
                 let fileName: string | undefined;
+                let fileMimeType: string | undefined;
                 
                 // Extract message content based on type and download media if needed
                 if (messageType === "text") {
@@ -860,6 +861,7 @@ export async function registerRoutes(
                     if (mediaData) {
                       fileUrl = mediaData.url;
                       fileName = mediaData.fileName;
+                      fileMimeType = mediaData.mimeType;
                       messageContent = message.image?.caption || "[Image received]";
                     } else {
                       messageContent = "[Image received - download failed]";
@@ -874,6 +876,7 @@ export async function registerRoutes(
                     if (mediaData) {
                       fileUrl = mediaData.url;
                       fileName = mediaData.fileName;
+                      fileMimeType = mediaData.mimeType;
                       messageContent = "[Voice message]";
                     } else {
                       messageContent = "[Voice message - download failed]";
@@ -888,6 +891,7 @@ export async function registerRoutes(
                     if (mediaData) {
                       fileUrl = mediaData.url;
                       fileName = message.document?.filename || mediaData.fileName;
+                      fileMimeType = mediaData.mimeType;
                       messageContent = message.document?.caption || `[Document: ${fileName}]`;
                     } else {
                       messageContent = "[Document received - download failed]";
@@ -902,6 +906,7 @@ export async function registerRoutes(
                     if (mediaData) {
                       fileUrl = mediaData.url;
                       fileName = mediaData.fileName;
+                      fileMimeType = mediaData.mimeType;
                       messageContent = message.video?.caption || "[Video received]";
                     } else {
                       messageContent = "[Video received - download failed]";
@@ -954,7 +959,8 @@ export async function registerRoutes(
                     "client",
                     messageContent,
                     fileUrl,
-                    fileName
+                    fileName,
+                    fileMimeType ? { type: fileMimeType } : undefined
                   );
                   // Update the external message ID
                   const latestMessages = await storage.getChatMessages(chat.id);
@@ -1312,8 +1318,13 @@ export async function registerRoutes(
     }),
     limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
     fileFilter: (req, file, cb) => {
-      const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf', 
-        'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+      const allowedTypes = [
+        'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+        'video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/webm', 'video/3gpp',
+        'audio/mpeg', 'audio/ogg', 'audio/webm', 'audio/wav', 'audio/mp4',
+        'application/pdf', 
+        'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      ];
       if (allowedTypes.includes(file.mimetype)) {
         cb(null, true);
       } else {
@@ -1357,7 +1368,8 @@ export async function registerRoutes(
       "user", 
       content,
       file ? `/api/files/${chatId}/${file.filename}` : undefined,
-      file?.originalname
+      file?.originalname,
+      file ? { size: file.size, type: file.mimetype } : undefined
     );
     
     res.status(201).json(message);

@@ -229,6 +229,13 @@ function MessageBubble({
     return false;
   };
 
+  const isVideoFile = (url: string | null, fileName: string | null, meta: any) => {
+    if (!url) return false;
+    if (meta?.type?.startsWith("video/")) return true;
+    if (fileName?.match(/\.(mp4|mov|avi|mkv|webm)$/i)) return true;
+    return false;
+  };
+
   const renderContent = () => {
     if (message.messageType === "file" && message.fileUrl) {
       if (isImageFile(message.fileUrl, message.fileName, message.fileMeta)) {
@@ -238,6 +245,25 @@ function MessageBubble({
               src={message.fileUrl}
               alt="Shared image"
               className="rounded-lg max-w-full h-auto"
+            />
+            <div className="flex items-center justify-end gap-1 mt-1">
+              <span className="text-xs text-whatsapp-text-secondary">
+                {formatTime(message.createdAt)}
+              </span>
+              {getStatusIcon()}
+            </div>
+          </div>
+        );
+      }
+
+      if (isVideoFile(message.fileUrl, message.fileName, message.fileMeta)) {
+        return (
+          <div className="max-w-[280px]">
+            <video
+              src={message.fileUrl}
+              controls
+              className="rounded-lg max-w-full h-auto"
+              preload="metadata"
             />
             <div className="flex items-center justify-end gap-1 mt-1">
               <span className="text-xs text-whatsapp-text-secondary">
@@ -1298,7 +1324,7 @@ export default function WhatsAppPage() {
                   type="file"
                   className="hidden"
                   onChange={handleFileSelect}
-                  accept="image/*,.pdf,.doc,.docx"
+                  accept="image/*,video/*,.pdf,.doc,.docx"
                   data-testid="input-file-upload"
                 />
                 <Button 

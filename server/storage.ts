@@ -32,7 +32,7 @@ export interface IStorage {
   createChat(chat: InsertChat): Promise<Chat>;
   updateChat(id: number, updates: Partial<Chat>): Promise<Chat>;
   createMessage(chatId: number, senderId: number | null, senderType: string, content: string, fileUrl?: string, externalMessageId?: string): Promise<Message>;
-  createMessageWithFile(chatId: number, senderId: number | null, senderType: string, content: string, fileUrl?: string, fileName?: string): Promise<Message>;
+  createMessageWithFile(chatId: number, senderId: number | null, senderType: string, content: string, fileUrl?: string, fileName?: string, fileMeta?: { size?: number; type?: string }): Promise<Message>;
   getMessageByFileUrl(chatId: number, fileUrl: string): Promise<Message | undefined>;
 
   // Notifications
@@ -201,7 +201,7 @@ export class DatabaseStorage implements IStorage {
     return message;
   }
 
-  async createMessageWithFile(chatId: number, senderId: number | null, senderType: string, content: string, fileUrl?: string, fileName?: string): Promise<Message> {
+  async createMessageWithFile(chatId: number, senderId: number | null, senderType: string, content: string, fileUrl?: string, fileName?: string, fileMeta?: { size?: number; type?: string }): Promise<Message> {
     const [message] = await db.insert(messages).values({
       chatId,
       senderId,
@@ -210,6 +210,7 @@ export class DatabaseStorage implements IStorage {
       content,
       fileUrl: fileUrl || null,
       fileName: fileName || null,
+      fileMeta: fileMeta || null,
     }).returning();
 
     // Update chat metadata (same as createMessage)
