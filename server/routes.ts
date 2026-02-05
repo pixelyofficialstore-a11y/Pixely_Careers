@@ -2026,8 +2026,8 @@ export async function registerRoutes(
     });
   });
 
-  // Delete a chat (admin only)
-  app.delete("/api/chats/:id", requireRole(["admin"]), async (req, res) => {
+  // Delete a chat (any authenticated user)
+  app.delete("/api/chats/:id", requireAuth, async (req, res) => {
     const chatId = Number(req.params.id);
     const chat = await storage.getChat(chatId);
     if (!chat) return res.sendStatus(404);

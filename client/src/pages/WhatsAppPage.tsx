@@ -2294,29 +2294,25 @@ export default function WhatsAppPage() {
                 <span className="text-whatsapp-text-primary">Mute notifications</span>
               </button>
 
-              {isAdminOrSupport && (
-                <>
-                  <button 
-                    onClick={() => {
-                      setRenameChatName(displayName);
-                      setShowRenameDialog(true);
-                    }}
-                    className="w-full px-6 py-4 flex items-center gap-6 hover:bg-whatsapp-hover transition-colors"
-                  >
-                    <Lock className="h-5 w-5 text-whatsapp-icon" />
-                    <span className="text-whatsapp-text-primary">Rename chat</span>
-                  </button>
-                  {isAdmin && (
-                    <button 
-                      onClick={() => setShowDeleteChatConfirm(true)}
-                      className="w-full px-6 py-4 flex items-center gap-6 hover:bg-whatsapp-hover transition-colors"
-                    >
-                      <Trash2 className="h-5 w-5 text-red-400" />
-                      <span className="text-red-400">Delete chat</span>
-                    </button>
-                  )}
-                </>
-              )}
+              <button 
+                onClick={() => {
+                  setRenameChatName(displayName);
+                  setShowRenameDialog(true);
+                }}
+                className="w-full px-6 py-4 flex items-center gap-6 hover:bg-whatsapp-hover transition-colors"
+                data-testid="button-rename-chat"
+              >
+                <Lock className="h-5 w-5 text-whatsapp-icon" />
+                <span className="text-whatsapp-text-primary">Rename chat</span>
+              </button>
+              <button 
+                onClick={() => setShowDeleteChatConfirm(true)}
+                className="w-full px-6 py-4 flex items-center gap-6 hover:bg-whatsapp-hover transition-colors"
+                data-testid="button-delete-chat"
+              >
+                <Trash2 className="h-5 w-5 text-red-400" />
+                <span className="text-red-400">Delete chat</span>
+              </button>
             </div>
           </ScrollArea>
         </div>
